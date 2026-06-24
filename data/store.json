@@ -6,8 +6,8 @@
     "email": {
       "smtpServer": "smtp.gmail.com",
       "smtpPort": 587,
-      "sender": "sanganip165@gmail.com",
-      "password": "jbsw zmqo pnxi hgzy",
+      "sender": "",
+      "password": "",
       "recipients": [
         "sanganip165@gmail.com"
       ]
