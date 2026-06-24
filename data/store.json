@@ -1,0 +1,124 @@
+{
+  "settings": {
+    "timeframe": "15m",
+    "touchMode": "range",
+    "pollIntervalSeconds": 60,
+    "email": {
+      "smtpServer": "smtp.gmail.com",
+      "smtpPort": 587,
+      "sender": "sanganip165@gmail.com",
+      "password": "jbsw zmqo pnxi hgzy",
+      "recipients": [
+        "sanganip165@gmail.com"
+      ]
+    }
+  },
+  "pairs": [
+    {
+      "id": "btc",
+      "name": "BTCUSDT.P",
+      "exchange": "binance",
+      "symbol": "BTC/USDT:USDT",
+      "tradingview": "BINANCE:BTCUSDT.P",
+      "timeframe": null,
+      "levels": [
+        {
+          "id": "b1",
+          "low": 62842.5,
+          "high": 63104.4
+        },
+        {
+          "id": "b2",
+          "low": 65605.5,
+          "high": 65941.6
+        },
+        {
+          "id": "b3",
+          "low": 59656.5,
+          "high": 59803.9
+        },
+        {
+          "id": "b4",
+          "low": 55945.4,
+          "high": 56517.3
+        }
+      ]
+    },
+    {
+      "id": "eth",
+      "name": "ETHUSDT.P",
+      "exchange": "binance",
+      "symbol": "ETH/USDT:USDT",
+      "tradingview": "BINANCE:ETHUSDT.P",
+      "timeframe": null,
+      "levels": [
+        {
+          "id": "e1",
+          "low": 1735.8,
+          "high": 1741.56
+        },
+        {
+          "id": "e2",
+          "low": 1621.7,
+          "high": 1641.3
+        },
+        {
+          "id": "e3",
+          "low": 1515.12,
+          "high": 1529.43
+        },
+        {
+          "id": "e4",
+          "low": 1424.39,
+          "high": 1438.06
+        },
+        {
+          "id": "e5",
+          "low": 1833.4,
+          "high": 1842.65
+        },
+        {
+          "id": "e6",
+          "low": 1888.84,
+          "high": 1891.79
+        }
+      ]
+    },
+    {
+      "id": "paxg",
+      "name": "PAXGUSDT.P",
+      "exchange": "binance",
+      "symbol": "PAXG/USDT:USDT",
+      "tradingview": "BINANCE:PAXGUSDT.P",
+      "timeframe": null,
+      "levels": [
+        {
+          "id": "l1",
+          "low": 4316.49,
+          "high": 4325.68
+        },
+        {
+          "id": "l2",
+          "low": 4270.43,
+          "high": 4274.94
+        },
+        {
+          "id": "l3",
+          "low": 4368.74,
+          "high": 4377.27
+        },
+        {
+          "id": "l4",
+          "low": 4209.2,
+          "high": 4224.91
+        },
+        {
+          "id": "l5",
+          "low": 4416.74,
+          "high": 4424.87
+        }
+      ]
+    }
+  ],
+  "alertedKeys": []
+}
