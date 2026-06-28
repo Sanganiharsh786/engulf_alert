@@ -5,6 +5,7 @@ import ExcelJS from "exceljs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function GET(req) {
   const user = await currentUser();
@@ -21,9 +22,12 @@ export async function GET(req) {
   const pairs = searchParams.get("pairs")
     ? searchParams.get("pairs").split(",").filter(Boolean)
     : null;
+  const days = searchParams.get("days")
+    ? Math.min(370, Math.max(1, Number(searchParams.get("days"))))
+    : 10;
 
   const store = await readStore(user);
-  const full = await runBacktest(store, { bars: 1000 });
+  const full = await runBacktest(store, { days });
   const trades = filterTrades(full.trades, { from, to, pairs });
   const out = { trades, summaries: summarizeTrades(trades) };
 

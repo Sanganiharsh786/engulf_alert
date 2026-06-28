@@ -49,13 +49,25 @@ export default function Backtest() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [pairSel, setPairSel] = useState([]); // empty = all
+  const [days, setDays] = useState(10);
   const toast = useToast();
 
-  async function run({ notify = true } = {}) {
+  const PERIODS = [
+    { label: "10 days", days: 10 },
+    { label: "1 month", days: 30 },
+    { label: "3 months", days: 90 },
+    { label: "6 months", days: 180 },
+  ];
+
+  async function run(d = days, { notify = true } = {}) {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/backtest", { method: "POST" });
+      const res = await fetch("/api/backtest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: d }),
+      });
       if (res.status === 401) {
         window.location.href = "/login";
         return;
@@ -66,7 +78,7 @@ export default function Backtest() {
         toast(`Backtest failed · ${json.error}`, "error");
       } else {
         setData(json);
-        if (notify) toast(`Backtest complete · ${json.trades.length} trades`, "success");
+        if (notify) toast(`Backtest complete · ${json.trades.length} trades over ${d} days`, "success");
       }
     } catch (e) {
       setError(String(e.message || e));
@@ -76,8 +88,13 @@ export default function Backtest() {
     }
   }
 
+  function pickPeriod(d) {
+    setDays(d);
+    run(d);
+  }
+
   useEffect(() => {
-    run({ notify: false });
+    run(10, { notify: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -110,9 +127,10 @@ export default function Backtest() {
     if (f) q.set("from", f);
     if (tt) q.set("to", tt);
     if (pairSel.length) q.set("pairs", pairSel.join(","));
+    q.set("days", String(days));
     const s = q.toString();
     return "/api/backtest/export" + (s ? `?${s}` : "");
-  }, [from, to, pairSel]);
+  }, [from, to, pairSel, days]);
 
   const reset = () => {
     setFrom("");
@@ -126,7 +144,7 @@ export default function Backtest() {
         <div>
           <h1 className="text-lg font-bold tracking-tight">Backtest results</h1>
           <p className="text-xs text-muted">
-            Engulfing-at-level setups over the last ~1000 candles · times in IST (UTC+5:30)
+            Engulfing-at-level setups · history fetched per timeframe · times in IST (UTC+5:30)
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -134,7 +152,7 @@ export default function Backtest() {
             ← Dashboard
           </a>
           <button
-            onClick={run}
+            onClick={() => run(days)}
             disabled={loading}
             className="text-xs px-3 py-2 rounded-md border border-border bg-panel hover:bg-panel/70 transition disabled:opacity-50"
           >
@@ -156,9 +174,29 @@ export default function Backtest() {
         </div>
       )}
 
+      {/* period selector */}
+      <div className="mt-5 flex flex-wrap items-center gap-2">
+        <span className="text-[10px] uppercase tracking-wide text-muted mr-1">Backtest period</span>
+        {PERIODS.map((p) => (
+          <button
+            key={p.days}
+            onClick={() => pickPeriod(p.days)}
+            disabled={loading}
+            className={`text-xs px-3 py-1.5 rounded-md border transition disabled:opacity-50 ${
+              days === p.days
+                ? "border-accent bg-accent/15 text-accent font-medium"
+                : "border-border bg-panel2 text-muted hover:border-accent/40"
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+        {loading && <span className="text-[11px] text-muted">fetching history…</span>}
+      </div>
+
       {/* filters */}
       {data && (
-        <div className="mt-5 rounded-lg border border-border bg-panel p-4 flex flex-wrap items-end gap-4">
+        <div className="mt-4 rounded-lg border border-border bg-panel p-4 flex flex-wrap items-end gap-4">
           <label className="block">
             <span className="text-[10px] uppercase tracking-wide text-muted">From (IST)</span>
             <input
