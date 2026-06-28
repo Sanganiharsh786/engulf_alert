@@ -287,7 +287,14 @@ function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onSc
         >
           Backtest
         </a>
-     
+        <a
+          href="/totalalerts"
+          className="text-xs px-3 py-2 rounded-md border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 transition"
+          title="All alerts — tick which trades you placed"
+        >
+          Total Alerts
+        </a>
+
         <label className="flex items-center gap-2 text-xs px-3 py-2 rounded-md border border-border bg-panel cursor-pointer select-none">
           <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="accent-accent" />
           Auto-scan
