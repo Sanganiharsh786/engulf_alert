@@ -21,6 +21,7 @@
       "symbol": "BTC/USDT:USDT",
       "tradingview": "BINANCE:BTCUSDT.P",
       "timeframe": null,
+      "leverage": 10,
       "levels": [
         {
           "id": "b1",
@@ -51,6 +52,7 @@
       "symbol": "ETH/USDT:USDT",
       "tradingview": "BINANCE:ETHUSDT.P",
       "timeframe": null,
+      "leverage": 10,
       "levels": [
         {
           "id": "e1",
@@ -91,6 +93,7 @@
       "symbol": "PAXG/USDT:USDT",
       "tradingview": "BINANCE:PAXGUSDT.P",
       "timeframe": null,
+      "leverage": 10,
       "levels": [
         {
           "id": "l1",

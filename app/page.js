@@ -154,6 +154,7 @@ export default function Dashboard() {
                     symbol: "NEW/USDT:USDT",
                     tradingview: "",
                     timeframe: null,
+                    leverage: 10,
                     levels: [],
                   })
                 )
@@ -354,11 +355,17 @@ function PairCard({ pair, result, mutate }) {
       </div>
 
       {/* pair fields */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-4 py-3 border-b border-border text-xs">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 px-4 py-3 border-b border-border text-xs">
         <Field label="Exchange" value={pair.exchange} onChange={(v) => set("exchange", v)} />
         <Field label="ccxt symbol" value={pair.symbol} onChange={(v) => set("symbol", v)} mono />
         <Field label="TradingView" value={pair.tradingview || ""} onChange={(v) => set("tradingview", v)} mono placeholder="auto" />
         <Field label="Timeframe" value={pair.timeframe || ""} onChange={(v) => set("timeframe", v || null)} placeholder="default" />
+        <Field
+          label="Leverage (x)"
+          value={pair.leverage ?? ""}
+          onChange={(v) => set("leverage", v === "" ? "" : parseFloat(v))}
+          placeholder="10"
+        />
       </div>
 
       {/* chart */}
@@ -597,13 +604,13 @@ function Settings({ settings, mutate }) {
           <>
             <div className="grid grid-cols-2 gap-3">
               <RiskField label="Account size" value={risk.accountSize} onChange={(v) => setRisk("accountSize", v)} placeholder="1000" />
-              <RiskField label="Leverage (x)" value={risk.leverage} onChange={(v) => setRisk("leverage", v)} placeholder="10" />
               <RiskField label="Risk % per trade" value={risk.riskPercent} onChange={(v) => setRisk("riskPercent", v)} placeholder="1" />
               <RiskField label="Reward : Risk" value={risk.rewardRatio} onChange={(v) => setRisk("rewardRatio", v)} placeholder="2" />
               <RiskField label="Pip size (USDT)" value={risk.pipSize} onChange={(v) => setRisk("pipSize", v)} placeholder="1" />
             </div>
             <p className="text-[10px] text-muted leading-relaxed">
               Lot size is calculated so hitting the stop loses your risk %. SL sits just past the engulfing candle; TP uses the reward:risk ratio.
+              <span className="text-accent"> Leverage is set per pair</span> (in each pair card).
             </p>
           </>
         )}
