@@ -20,7 +20,7 @@ export async function POST(req) {
       /* default: send */
     }
     const store = await readStore(user);
-    const out = await runHistory(store, { send, bars: 150 });
+    const out = await runHistory(store, { send, bars: 500 });
     await writeStore(user, store);
     return NextResponse.json(out);
   } catch (e) {
