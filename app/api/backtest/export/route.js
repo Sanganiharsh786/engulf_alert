@@ -1,12 +1,12 @@
 import { readStore } from "@/lib/store";
-import { runBacktest } from "@/lib/backtest";
+import { runBacktest, filterTrades, summarizeTrades } from "@/lib/backtest";
 import { currentUser } from "@/lib/session";
 import ExcelJS from "exceljs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req) {
   const user = await currentUser();
   if (!user) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
@@ -15,8 +15,17 @@ export async function GET() {
     });
   }
 
+  const { searchParams } = new URL(req.url);
+  const from = searchParams.get("from") ? Number(searchParams.get("from")) : null;
+  const to = searchParams.get("to") ? Number(searchParams.get("to")) : null;
+  const pairs = searchParams.get("pairs")
+    ? searchParams.get("pairs").split(",").filter(Boolean)
+    : null;
+
   const store = await readStore(user);
-  const out = await runBacktest(store, { bars: 1000 });
+  const full = await runBacktest(store, { bars: 1000 });
+  const trades = filterTrades(full.trades, { from, to, pairs });
+  const out = { trades, summaries: summarizeTrades(trades) };
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "Engulfing Alerts";
@@ -48,7 +57,7 @@ export async function GET() {
   // Trades sheet
   const tr = wb.addWorksheet("Trades");
   tr.columns = [
-    { header: "Date/Time (UTC)", key: "time", width: 18 },
+    { header: "Date/Time (IST)", key: "time", width: 18 },
     { header: "Day", key: "day", width: 8 },
     { header: "Pair", key: "pair", width: 14 },
     { header: "Direction", key: "direction", width: 10 },
