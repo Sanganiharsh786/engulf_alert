@@ -660,14 +660,14 @@ function Settings({ settings, mutate }) {
         </label>
       </div>
 
-      <Segmented
-        label="Touch mode"
-        value={settings.touchMode || "range"}
-        onChange={(v) => setS("touchMode", v)}
+      <MultiSelectModes
+        label="Touch mode (select one or more)"
+        values={settings.touchModes || [settings.touchMode || "range"]}
+        onChange={(v) => setS("touchModes", v)}
         options={[
-          { value: "range", label: "Range", hint: "wick touches the zone (most alerts)" },
+          { value: "range", label: "Range", hint: "wick touches the zone" },
           { value: "body", label: "Body", hint: "candle body touches the zone" },
-          { value: "close", label: "Close", hint: "candle closes inside the zone (strict)" },
+          { value: "close", label: "Close", hint: "candle closes inside the zone" },
         ]}
       />
 
@@ -758,20 +758,29 @@ function Select({ label, value, onChange, options }) {
   );
 }
 
-// segmented "checkbox"-style selector (one active option)
-function Segmented({ label, value, onChange, options }) {
-  const active = options.find((o) => o.value === value) || options[0];
+// multi-select checkbox group — an engulfing counts if it matches ANY checked mode
+function MultiSelectModes({ label, values, onChange, options }) {
+  const selected = Array.isArray(values) && values.length ? values : ["range"];
+  const toggle = (v) => {
+    const set = new Set(selected);
+    if (set.has(v)) set.delete(v);
+    else set.add(v);
+    if (set.size === 0) set.add(v); // keep at least one selected
+    // preserve option order
+    onChange(options.map((o) => o.value).filter((x) => set.has(x)));
+  };
   return (
     <div>
       <span className="text-[10px] uppercase tracking-wide text-muted">{label}</span>
       <div className="mt-1 grid grid-cols-3 gap-1.5">
         {options.map((o) => {
-          const on = o.value === value;
+          const on = selected.includes(o.value);
           return (
             <button
               key={o.value}
               type="button"
-              onClick={() => onChange(o.value)}
+              onClick={() => toggle(o.value)}
+              title={o.hint}
               className={`flex items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-xs transition ${
                 on
                   ? "border-accent bg-accent/15 text-accent font-medium"
@@ -790,7 +799,10 @@ function Segmented({ label, value, onChange, options }) {
           );
         })}
       </div>
-      <p className="mt-1 text-[10px] text-muted">{active.hint}</p>
+      <p className="mt-1 text-[10px] text-muted">
+        Alerts when a candle matches {selected.length > 1 ? "any of: " : ""}
+        <span className="text-ink">{selected.join(", ")}</span>
+      </p>
     </div>
   );
 }
