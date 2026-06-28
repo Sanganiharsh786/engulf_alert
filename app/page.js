@@ -649,13 +649,7 @@ function Settings({ settings, mutate }) {
           onChange={(v) => setS("timeframe", v)}
           options={["1m", "5m", "15m", "30m", "1h", "4h", "1d"]}
         />
-        <Select
-          label="Touch mode"
-          value={settings.touchMode || "range"}
-          onChange={(v) => setS("touchMode", v)}
-          options={["range", "body", "close"]}
-        />
-        <label className="block col-span-2">
+        <label className="block">
           <span className="text-[10px] uppercase tracking-wide text-muted">Auto-scan interval (sec)</span>
           <input
             type="number"
@@ -665,6 +659,17 @@ function Settings({ settings, mutate }) {
           />
         </label>
       </div>
+
+      <Segmented
+        label="Touch mode"
+        value={settings.touchMode || "range"}
+        onChange={(v) => setS("touchMode", v)}
+        options={[
+          { value: "range", label: "Range", hint: "wick touches the zone (most alerts)" },
+          { value: "body", label: "Body", hint: "candle body touches the zone" },
+          { value: "close", label: "Close", hint: "candle closes inside the zone (strict)" },
+        ]}
+      />
 
       <div className="pt-2 border-t border-border space-y-3 text-xs">
         <h3 className="text-[10px] uppercase tracking-wide text-muted">Email alerts</h3>
@@ -750,6 +755,43 @@ function Select({ label, value, onChange, options }) {
         ))}
       </select>
     </label>
+  );
+}
+
+// segmented "checkbox"-style selector (one active option)
+function Segmented({ label, value, onChange, options }) {
+  const active = options.find((o) => o.value === value) || options[0];
+  return (
+    <div>
+      <span className="text-[10px] uppercase tracking-wide text-muted">{label}</span>
+      <div className="mt-1 grid grid-cols-3 gap-1.5">
+        {options.map((o) => {
+          const on = o.value === value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => onChange(o.value)}
+              className={`flex items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-xs transition ${
+                on
+                  ? "border-accent bg-accent/15 text-accent font-medium"
+                  : "border-border bg-panel2 text-muted hover:border-accent/40"
+              }`}
+            >
+              <span
+                className={`h-3 w-3 rounded-[4px] border flex items-center justify-center text-[9px] ${
+                  on ? "border-accent bg-accent text-white" : "border-muted/50"
+                }`}
+              >
+                {on ? "✓" : ""}
+              </span>
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-1 text-[10px] text-muted">{active.hint}</p>
+    </div>
   );
 }
 
