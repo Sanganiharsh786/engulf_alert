@@ -12,14 +12,20 @@ export async function POST(req) {
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   try {
     let days = 10;
+    let from = null;
+    let to = null;
     try {
       const b = await req.json();
       if (b && Number(b.days)) days = Math.min(370, Math.max(1, Number(b.days)));
+      if (b && Number(b.from) && Number(b.to)) {
+        from = Number(b.from);
+        to = Number(b.to);
+      }
     } catch {
       /* default */
     }
     const store = await readStore(user);
-    const out = await runBacktest(store, { days });
+    const out = await runBacktest(store, from && to ? { from, to } : { days });
     out.days = days;
     return NextResponse.json(out);
   } catch (e) {

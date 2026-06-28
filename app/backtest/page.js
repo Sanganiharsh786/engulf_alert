@@ -70,18 +70,36 @@ export default function Backtest() {
   const [error, setError] = useState("");
   const [pairSel, setPairSel] = useState([]); // empty = all
   const [monthSel, setMonthSel] = useState(null); // "YYYY-MM" or null = all months
+  const [period, setPeriod] = useState("recent"); // "recent" | "2023" | "2024" | ...
   const toast = useToast();
 
   const LOOKBACK_DAYS = 180; // ~6 months of history for the monthly breakdown
+  const nowYear = new Date().getUTCFullYear();
+  const YEARS = [];
+  for (let y = nowYear; y >= 2023; y--) YEARS.push(String(y));
 
-  async function run({ notify = true } = {}) {
+  // IST boundaries of a calendar year, as UTC ms
+  function yearRange(year) {
+    const y = Number(year);
+    return {
+      from: Date.UTC(y, 0, 1) - IST_OFFSET_MS,
+      to: Date.UTC(y + 1, 0, 1) - IST_OFFSET_MS - 1,
+    };
+  }
+
+  async function run(sel = period, { notify = true } = {}) {
     setLoading(true);
     setError("");
+    setMonthSel(null);
     try {
+      const body =
+        sel === "recent"
+          ? { days: LOOKBACK_DAYS }
+          : yearRange(sel);
       const res = await fetch("/api/backtest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ days: LOOKBACK_DAYS }),
+        body: JSON.stringify(body),
       });
       if (res.status === 401) {
         window.location.href = "/login";
@@ -93,7 +111,11 @@ export default function Backtest() {
         toast(`Backtest failed · ${json.error}`, "error");
       } else {
         setData(json);
-        if (notify) toast(`Backtest complete · ${json.trades.length} trades`, "success");
+        if (notify)
+          toast(
+            `Backtest complete · ${json.trades.length} trades · ${sel === "recent" ? "last 6 months" : sel}`,
+            "success"
+          );
       }
     } catch (e) {
       setError(String(e.message || e));
@@ -103,8 +125,13 @@ export default function Backtest() {
     }
   }
 
+  function pickPeriod(sel) {
+    setPeriod(sel);
+    run(sel);
+  }
+
   useEffect(() => {
-    run({ notify: false });
+    run("recent", { notify: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -141,10 +168,16 @@ export default function Backtest() {
       const [y, m] = monthSel.split("-").map(Number);
       q.set("from", String(Date.UTC(y, m - 1, 1) - IST_OFFSET_MS));
       q.set("to", String(Date.UTC(y, m, 1) - IST_OFFSET_MS - 1));
+    } else if (period !== "recent") {
+      const r = yearRange(period);
+      q.set("from", String(r.from));
+      q.set("to", String(r.to));
+    } else {
+      q.set("days", String(LOOKBACK_DAYS));
     }
-    q.set("days", String(LOOKBACK_DAYS));
     return "/api/backtest/export?" + q.toString();
-  }, [pairSel, monthSel]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pairSel, monthSel, period]);
 
   const reset = () => {
     setPairSel([]);
@@ -186,6 +219,37 @@ export default function Backtest() {
           {error}
         </div>
       )}
+
+      {/* period / year selector */}
+      <div className="mt-5 flex flex-wrap items-center gap-2">
+        <span className="text-[10px] uppercase tracking-wide text-muted mr-1">Period</span>
+        <button
+          onClick={() => pickPeriod("recent")}
+          disabled={loading}
+          className={`text-xs px-3 py-1.5 rounded-md border transition disabled:opacity-50 ${
+            period === "recent"
+              ? "border-accent bg-accent/15 text-accent font-medium"
+              : "border-border bg-panel2 text-muted hover:border-accent/40"
+          }`}
+        >
+          Last 6 months
+        </button>
+        {YEARS.map((y) => (
+          <button
+            key={y}
+            onClick={() => pickPeriod(y)}
+            disabled={loading}
+            className={`text-xs px-3 py-1.5 rounded-md border transition disabled:opacity-50 ${
+              period === y
+                ? "border-accent bg-accent/15 text-accent font-medium"
+                : "border-border bg-panel2 text-muted hover:border-accent/40"
+            }`}
+          >
+            {y}
+          </button>
+        ))}
+        {loading && <span className="text-[11px] text-muted">fetching history…</span>}
+      </div>
 
       {/* pair filter */}
       {data && (

@@ -27,7 +27,8 @@ export async function GET(req) {
     : 10;
 
   const store = await readStore(user);
-  const full = await runBacktest(store, { days });
+  // when a from/to window is given, fetch exactly that window; else use days
+  const full = await runBacktest(store, from && to ? { from, to } : { days });
   const trades = filterTrades(full.trades, { from, to, pairs });
   const out = { trades, summaries: summarizeTrades(trades) };
 
