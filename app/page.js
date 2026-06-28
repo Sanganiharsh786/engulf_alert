@@ -154,7 +154,9 @@ export default function Dashboard() {
                     symbol: "NEW/USDT:USDT",
                     tradingview: "",
                     timeframe: null,
-                    leverage: 10,
+                    leverage: 25,
+                    contractSize: 1,
+                    pipSize: 1,
                     levels: [],
                   })
                 )
@@ -355,16 +357,31 @@ function PairCard({ pair, result, mutate }) {
       </div>
 
       {/* pair fields */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 px-4 py-3 border-b border-border text-xs">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-4 pt-3 text-xs">
         <Field label="Exchange" value={pair.exchange} onChange={(v) => set("exchange", v)} />
         <Field label="ccxt symbol" value={pair.symbol} onChange={(v) => set("symbol", v)} mono />
         <Field label="TradingView" value={pair.tradingview || ""} onChange={(v) => set("tradingview", v)} mono placeholder="auto" />
         <Field label="Timeframe" value={pair.timeframe || ""} onChange={(v) => set("timeframe", v || null)} placeholder="default" />
+      </div>
+      {/* trade params (forex lot sizing) */}
+      <div className="grid grid-cols-3 gap-3 px-4 pt-3 pb-3 border-b border-border text-xs">
         <Field
           label="Leverage (x)"
           value={pair.leverage ?? ""}
           onChange={(v) => set("leverage", v === "" ? "" : parseFloat(v))}
-          placeholder="10"
+          placeholder="25"
+        />
+        <Field
+          label="Contract size"
+          value={pair.contractSize ?? ""}
+          onChange={(v) => set("contractSize", v === "" ? "" : parseFloat(v))}
+          placeholder="gold 100 · crypto 1"
+        />
+        <Field
+          label="Pip size"
+          value={pair.pipSize ?? ""}
+          onChange={(v) => set("pipSize", v === "" ? "" : parseFloat(v))}
+          placeholder="gold 0.1 · crypto 1"
         />
       </div>
 
@@ -667,7 +684,7 @@ function SignalLog({ signals }) {
               {sig.position && (
                 <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] font-mono tnum border-t border-border pt-2">
                   <span className="text-muted">Entry <span className="text-ink">{fmt(sig.position.entry)}</span></span>
-                  <span className="text-muted">Lot <span className="text-accent">{sig.position.qty}</span></span>
+                  <span className="text-muted">Lots <span className="text-accent">{sig.position.lots}</span></span>
                   <span className="text-muted">SL <span className="text-bear">{fmt(sig.position.stop)}</span> <span className="text-muted">({sig.position.slPips}p)</span></span>
                   <span className="text-muted">TP <span className="text-bull">{fmt(sig.position.tp)}</span> <span className="text-muted">({sig.position.tpPips}p)</span></span>
                   <span className="text-muted">Margin <span className="text-ink">{fmt(sig.position.margin)}</span></span>
