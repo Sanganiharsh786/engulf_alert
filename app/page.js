@@ -471,11 +471,33 @@ function NumberInput({ value, onChange }) {
   );
 }
 
+function RiskField({ label, value, onChange, placeholder }) {
+  return (
+    <label className="block">
+      <span className="text-[10px] uppercase tracking-wide text-muted">{label}</span>
+      <input
+        type="number"
+        step="any"
+        value={value ?? ""}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value === "" ? "" : parseFloat(e.target.value))}
+        className="mt-1 w-full bg-panel2 border border-border rounded-md px-2 py-1.5 font-mono outline-none focus:border-accent/60"
+      />
+    </label>
+  );
+}
+
 /* ---------- settings ---------- */
 function Settings({ settings, mutate }) {
   const setS = (field, value) => mutate((s) => (s.settings[field] = value));
   const setEmail = (field, value) => mutate((s) => (s.settings.email[field] = value));
+  const setRisk = (field, value) =>
+    mutate((s) => {
+      if (!s.settings.risk) s.settings.risk = {};
+      s.settings.risk[field] = value;
+    });
   const email = settings.email || {};
+  const risk = settings.risk || {};
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
 
@@ -556,6 +578,36 @@ function Settings({ settings, mutate }) {
           )}
         </div>
       </div>
+
+      <div className="pt-2 border-t border-border space-y-3 text-xs">
+        <label className="flex items-center justify-between cursor-pointer select-none">
+          <h3 className="text-[10px] uppercase tracking-wide text-muted">Risk &amp; position sizing</h3>
+          <span className="flex items-center gap-2 text-[11px] text-muted">
+            <input
+              type="checkbox"
+              checked={!!risk.enabled}
+              onChange={(e) => setRisk("enabled", e.target.checked)}
+              className="accent-accent"
+            />
+            include in alerts
+          </span>
+        </label>
+
+        {risk.enabled && (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <RiskField label="Account size" value={risk.accountSize} onChange={(v) => setRisk("accountSize", v)} placeholder="1000" />
+              <RiskField label="Leverage (x)" value={risk.leverage} onChange={(v) => setRisk("leverage", v)} placeholder="10" />
+              <RiskField label="Risk % per trade" value={risk.riskPercent} onChange={(v) => setRisk("riskPercent", v)} placeholder="1" />
+              <RiskField label="Reward : Risk" value={risk.rewardRatio} onChange={(v) => setRisk("rewardRatio", v)} placeholder="2" />
+              <RiskField label="Pip size (USDT)" value={risk.pipSize} onChange={(v) => setRisk("pipSize", v)} placeholder="1" />
+            </div>
+            <p className="text-[10px] text-muted leading-relaxed">
+              Lot size is calculated so hitting the stop loses your risk %. SL sits just past the engulfing candle; TP uses the reward:risk ratio.
+            </p>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -607,6 +659,16 @@ function SignalLog({ signals }) {
                 {fmt(sig.low)} → {fmt(sig.high)}
                 {sig.emailed === false && <span className="text-bear ml-2">email failed</span>}
               </div>
+              {sig.position && (
+                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] font-mono tnum border-t border-border pt-2">
+                  <span className="text-muted">Entry <span className="text-ink">{fmt(sig.position.entry)}</span></span>
+                  <span className="text-muted">Lot <span className="text-accent">{sig.position.qty}</span></span>
+                  <span className="text-muted">SL <span className="text-bear">{fmt(sig.position.stop)}</span> <span className="text-muted">({sig.position.slPips}p)</span></span>
+                  <span className="text-muted">TP <span className="text-bull">{fmt(sig.position.tp)}</span> <span className="text-muted">({sig.position.tpPips}p)</span></span>
+                  <span className="text-muted">Margin <span className="text-ink">{fmt(sig.position.margin)}</span></span>
+                  <span className="text-muted">Risk <span className="text-ink">{fmt(sig.position.riskAmount)}</span> → <span className="text-bull">{fmt(sig.position.rewardAmount)}</span></span>
+                </div>
+              )}
             </a>
           ))}
         </div>
