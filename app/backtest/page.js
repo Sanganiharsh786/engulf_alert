@@ -10,16 +10,6 @@ const fmt = (n) =>
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
-// "YYYY-MM-DD" (IST day) -> epoch ms at start/end of that IST day
-function istDayStart(dateStr) {
-  if (!dateStr) return null;
-  return Date.parse(dateStr + "T00:00:00Z") - IST_OFFSET_MS;
-}
-function istDayEnd(dateStr) {
-  if (!dateStr) return null;
-  return Date.parse(dateStr + "T23:59:59Z") - IST_OFFSET_MS;
-}
-
 function summarize(trades) {
   const byPair = {};
   for (const t of trades) {
@@ -42,31 +32,56 @@ function summarize(trades) {
   }));
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function monthLabel(key) {
+  const [y, m] = key.split("-");
+  return `${MONTHS[Number(m) - 1]} ${y}`;
+}
+
+// win rate per IST calendar month ("YYYY-MM" from the trade's IST time)
+function summarizeByMonth(trades) {
+  const byMonth = {};
+  for (const t of trades) {
+    const key = t.time.slice(0, 7); // "YYYY-MM" in IST
+    const s = (byMonth[key] = byMonth[key] || {
+      key, signals: 0, closed: 0, wins: 0, losses: 0, netR: 0,
+    });
+    s.signals++;
+    if (t.outcome !== "open") {
+      s.closed++;
+      if (t.outcome === "win") s.wins++;
+      else if (t.outcome === "loss") s.losses++;
+      s.netR += t.r;
+    }
+  }
+  return Object.values(byMonth)
+    .sort((a, b) => (a.key < b.key ? 1 : -1)) // newest first
+    .map((s) => ({
+      ...s,
+      label: monthLabel(s.key),
+      netR: Math.round(s.netR * 100) / 100,
+      winRate: s.closed ? Math.round((s.wins / s.closed) * 1000) / 10 : 0,
+    }));
+}
+
 export default function Backtest() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
   const [pairSel, setPairSel] = useState([]); // empty = all
-  const [days, setDays] = useState(10);
+  const [monthSel, setMonthSel] = useState(null); // "YYYY-MM" or null = all months
   const toast = useToast();
 
-  const PERIODS = [
-    { label: "10 days", days: 10 },
-    { label: "1 month", days: 30 },
-    { label: "3 months", days: 90 },
-    { label: "6 months", days: 180 },
-  ];
+  const LOOKBACK_DAYS = 180; // ~6 months of history for the monthly breakdown
 
-  async function run(d = days, { notify = true } = {}) {
+  async function run({ notify = true } = {}) {
     setLoading(true);
     setError("");
     try {
       const res = await fetch("/api/backtest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ days: d }),
+        body: JSON.stringify({ days: LOOKBACK_DAYS }),
       });
       if (res.status === 401) {
         window.location.href = "/login";
@@ -78,7 +93,7 @@ export default function Backtest() {
         toast(`Backtest failed · ${json.error}`, "error");
       } else {
         setData(json);
-        if (notify) toast(`Backtest complete · ${json.trades.length} trades over ${d} days`, "success");
+        if (notify) toast(`Backtest complete · ${json.trades.length} trades`, "success");
       }
     } catch (e) {
       setError(String(e.message || e));
@@ -88,13 +103,8 @@ export default function Backtest() {
     }
   }
 
-  function pickPeriod(d) {
-    setDays(d);
-    run(d);
-  }
-
   useEffect(() => {
-    run(10, { notify: false });
+    run({ notify: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -103,17 +113,21 @@ export default function Backtest() {
     [data]
   );
 
-  const filtered = useMemo(() => {
+  // trades narrowed by pair only — used for the monthly breakdown (all months)
+  const pairFiltered = useMemo(() => {
     if (!data) return [];
-    const f = istDayStart(from);
-    const tt = istDayEnd(to);
-    return data.trades.filter((t) => {
-      if (f && t.ts < f) return false;
-      if (tt && t.ts > tt) return false;
-      if (pairSel.length && !pairSel.includes(t.pair)) return false;
-      return true;
-    });
-  }, [data, from, to, pairSel]);
+    return pairSel.length
+      ? data.trades.filter((t) => pairSel.includes(t.pair))
+      : data.trades;
+  }, [data, pairSel]);
+
+  const months = useMemo(() => summarizeByMonth(pairFiltered), [pairFiltered]);
+
+  // trades for the table/cards — pair + selected month
+  const filtered = useMemo(
+    () => (monthSel ? pairFiltered.filter((t) => t.time.slice(0, 7) === monthSel) : pairFiltered),
+    [pairFiltered, monthSel]
+  );
 
   const summaries = useMemo(() => summarize(filtered), [filtered]);
 
@@ -122,20 +136,19 @@ export default function Backtest() {
 
   const exportUrl = useMemo(() => {
     const q = new URLSearchParams();
-    const f = istDayStart(from);
-    const tt = istDayEnd(to);
-    if (f) q.set("from", f);
-    if (tt) q.set("to", tt);
     if (pairSel.length) q.set("pairs", pairSel.join(","));
-    q.set("days", String(days));
-    const s = q.toString();
-    return "/api/backtest/export" + (s ? `?${s}` : "");
-  }, [from, to, pairSel, days]);
+    if (monthSel) {
+      const [y, m] = monthSel.split("-").map(Number);
+      q.set("from", String(Date.UTC(y, m - 1, 1) - IST_OFFSET_MS));
+      q.set("to", String(Date.UTC(y, m, 1) - IST_OFFSET_MS - 1));
+    }
+    q.set("days", String(LOOKBACK_DAYS));
+    return "/api/backtest/export?" + q.toString();
+  }, [pairSel, monthSel]);
 
   const reset = () => {
-    setFrom("");
-    setTo("");
     setPairSel([]);
+    setMonthSel(null);
   };
 
   return (
@@ -152,7 +165,7 @@ export default function Backtest() {
             ← Dashboard
           </a>
           <button
-            onClick={() => run(days)}
+            onClick={() => run()}
             disabled={loading}
             className="text-xs px-3 py-2 rounded-md border border-border bg-panel hover:bg-panel/70 transition disabled:opacity-50"
           >
@@ -174,78 +187,75 @@ export default function Backtest() {
         </div>
       )}
 
-      {/* period selector */}
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        <span className="text-[10px] uppercase tracking-wide text-muted mr-1">Backtest period</span>
-        {PERIODS.map((p) => (
-          <button
-            key={p.days}
-            onClick={() => pickPeriod(p.days)}
-            disabled={loading}
-            className={`text-xs px-3 py-1.5 rounded-md border transition disabled:opacity-50 ${
-              days === p.days
-                ? "border-accent bg-accent/15 text-accent font-medium"
-                : "border-border bg-panel2 text-muted hover:border-accent/40"
-            }`}
-          >
-            {p.label}
-          </button>
-        ))}
-        {loading && <span className="text-[11px] text-muted">fetching history…</span>}
-      </div>
-
-      {/* filters */}
+      {/* pair filter */}
       {data && (
-        <div className="mt-4 rounded-lg border border-border bg-panel p-4 flex flex-wrap items-end gap-4">
-          <label className="block">
-            <span className="text-[10px] uppercase tracking-wide text-muted">From (IST)</span>
-            <input
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              className="mt-1 block bg-panel2 border border-border rounded-md px-2 py-1.5 text-xs outline-none focus:border-accent/60"
-            />
-          </label>
-          <label className="block">
-            <span className="text-[10px] uppercase tracking-wide text-muted">To (IST)</span>
-            <input
-              type="date"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              className="mt-1 block bg-panel2 border border-border rounded-md px-2 py-1.5 text-xs outline-none focus:border-accent/60"
-            />
-          </label>
-          <div>
-            <span className="text-[10px] uppercase tracking-wide text-muted">Pairs</span>
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {allPairs.map((p) => {
-                const on = pairSel.length === 0 || pairSel.includes(p);
-                return (
-                  <button
-                    key={p}
-                    onClick={() => togglePair(p)}
-                    className={`text-xs px-2.5 py-1.5 rounded-md border transition ${
-                      pairSel.includes(p)
-                        ? "border-accent bg-accent/15 text-accent font-medium"
-                        : "border-border bg-panel2 text-muted hover:border-accent/40"
-                    }`}
-                    title={pairSel.length === 0 ? "all pairs shown" : ""}
-                  >
-                    {p}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <button
-            onClick={reset}
-            className="text-xs px-3 py-1.5 rounded-md border border-border bg-panel2 text-muted hover:text-ink transition"
-          >
-            Reset
-          </button>
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wide text-muted mr-1">Pairs</span>
+          {allPairs.map((p) => (
+            <button
+              key={p}
+              onClick={() => togglePair(p)}
+              className={`text-xs px-2.5 py-1.5 rounded-md border transition ${
+                pairSel.includes(p)
+                  ? "border-accent bg-accent/15 text-accent font-medium"
+                  : "border-border bg-panel2 text-muted hover:border-accent/40"
+              }`}
+              title={pairSel.length === 0 ? "all pairs included" : ""}
+            >
+              {p}
+            </button>
+          ))}
+          {(pairSel.length > 0 || monthSel) && (
+            <button
+              onClick={reset}
+              className="text-xs px-3 py-1.5 rounded-md border border-border bg-panel2 text-muted hover:text-ink transition"
+            >
+              Reset
+            </button>
+          )}
           <span className="text-[11px] text-muted ml-auto">
             {filtered.length} of {data.trades.length} trades
           </span>
+        </div>
+      )}
+
+      {/* monthly win rate breakdown */}
+      {data && months.length > 0 && (
+        <div className="mt-5">
+          <div className="text-[10px] uppercase tracking-wide text-muted mb-2">
+            Win rate by month{monthSel ? " · click again to clear" : " · click a month to filter"}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {months.map((m) => {
+              const active = monthSel === m.key;
+              return (
+                <button
+                  key={m.key}
+                  onClick={() => setMonthSel(active ? null : m.key)}
+                  className={`text-left rounded-lg border p-3 transition ${
+                    active
+                      ? "border-accent bg-accent/10"
+                      : "border-border bg-panel hover:border-accent/40"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold">{m.label}</span>
+                    <span className="text-[10px] text-muted">{m.signals} sig</span>
+                  </div>
+                  <div className="mt-1 flex items-end gap-2">
+                    <span className={`text-2xl font-bold ${m.winRate >= 50 ? "text-bull" : "text-bear"}`}>
+                      {m.winRate}%
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] font-mono">
+                    <span className="text-bull">{m.wins}W</span>{" "}
+                    <span className="text-bear">{m.losses}L</span>{" "}
+                    <span className={m.netR >= 0 ? "text-bull" : "text-bear"}>· {m.netR}R</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
