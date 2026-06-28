@@ -352,7 +352,12 @@ function PairCard({ pair, result, mutate }) {
     try {
       const data = await fetch(`/api/candles?pairId=${pair.id}`).then((r) => r.json());
       if (data.rows) {
-        setSvg(buildChartSVG({ pair, tf: data.tf, rows: data.rows, signalTs: result?.last?.ts, direction: dir }));
+        // draw the offset-shifted zones so the chart matches what's watched
+        const off = Number(pair.levelOffset) || 0;
+        const chartPair = off
+          ? { ...pair, levels: pair.levels.map((l) => ({ ...l, low: l.low + off, high: l.high + off })) }
+          : pair;
+        setSvg(buildChartSVG({ pair: chartPair, tf: data.tf, rows: data.rows, signalTs: result?.last?.ts, direction: dir }));
       } else {
         setSvg("");
       }
@@ -469,15 +474,34 @@ function PairCard({ pair, result, mutate }) {
 
       {/* levels */}
       <div className="px-4 py-3">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted">Levels</span>
-          <button
-            onClick={() => mutate((s) => s.pairs.find((x) => x.id === pair.id).levels.push({ id: uid(), low: 0, high: 0 }))}
-            className="text-xs px-2.5 py-1 rounded-md bg-gold/15 text-gold border border-gold/30 hover:bg-gold/25 transition"
-          >
-            + Add level
-          </button>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted">
+              Offset
+              <input
+                type="number"
+                step="any"
+                value={pair.levelOffset ?? ""}
+                placeholder="0"
+                onChange={(e) => set("levelOffset", e.target.value === "" ? "" : parseFloat(e.target.value))}
+                className="w-20 bg-panel2 border border-border rounded px-2 py-1 font-mono tnum text-xs outline-none focus:border-accent/60"
+                title="Shift every level by this price (e.g. -5.79 to align your broker's gold with Binance)"
+              />
+            </label>
+            <button
+              onClick={() => mutate((s) => s.pairs.find((x) => x.id === pair.id).levels.push({ id: uid(), low: 0, high: 0 }))}
+              className="text-xs px-2.5 py-1 rounded-md bg-gold/15 text-gold border border-gold/30 hover:bg-gold/25 transition"
+            >
+              + Add level
+            </button>
+          </div>
         </div>
+        {pair.levelOffset ? (
+          <div className="text-[10px] text-muted mb-2 font-mono">
+            Watching levels shifted by {pair.levelOffset > 0 ? "+" : ""}{pair.levelOffset} (broker → feed)
+          </div>
+        ) : null}
 
         {pair.levels.length === 0 ? (
           <div className="text-xs text-muted py-3">No levels yet. Add a zone to watch.</div>
@@ -487,6 +511,7 @@ function PairCard({ pair, result, mutate }) {
               <LevelRow
                 key={lvl.id}
                 lvl={lvl}
+                offset={pair.levelOffset}
                 state={lvlResult(lvl.id)}
                 onChange={(field, value) =>
                   mutate((s) => {
@@ -525,9 +550,10 @@ function Field({ label, value, onChange, mono, placeholder }) {
 }
 
 /* ---------- level row ---------- */
-function LevelRow({ lvl, state, onChange, onDelete }) {
+function LevelRow({ lvl, state, onChange, onDelete, offset }) {
   const touched = state?.touched;
   const gap = state?.gap;
+  const off = Number(offset) || 0;
   return (
     <div
       className={`flex items-center gap-2 rounded-md border px-2 py-1.5 ${
@@ -538,6 +564,11 @@ function LevelRow({ lvl, state, onChange, onDelete }) {
       <NumberInput value={lvl.low} onChange={(v) => onChange("low", v)} />
       <span className="text-muted text-xs">→</span>
       <NumberInput value={lvl.high} onChange={(v) => onChange("high", v)} />
+      {off !== 0 && (
+        <span className="text-[10px] font-mono text-gold/80 whitespace-nowrap" title="Effective watched zone after offset">
+          ⇒ {fmt(Math.min(lvl.low, lvl.high) + off)}–{fmt(Math.max(lvl.low, lvl.high) + off)}
+        </span>
+      )}
       <div className="ml-auto flex items-center gap-2">
         {state && (
           <span className={`text-[10px] font-mono ${touched ? "text-gold" : "text-muted"}`}>
