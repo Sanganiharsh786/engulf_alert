@@ -25,11 +25,13 @@ export async function GET(req) {
   const days = searchParams.get("days")
     ? Math.min(370, Math.max(1, Number(searchParams.get("days"))))
     : 10;
+  const exclFrom = searchParams.get("exclFrom") != null ? Number(searchParams.get("exclFrom")) : null;
+  const exclTo = searchParams.get("exclTo") != null ? Number(searchParams.get("exclTo")) : null;
 
   const store = await readStore(user);
   // when a from/to window is given, fetch exactly that window; else use days
   const full = await runBacktest(store, from && to ? { from, to } : { days });
-  const trades = filterTrades(full.trades, { from, to, pairs });
+  const trades = filterTrades(full.trades, { from, to, pairs, exclFrom, exclTo });
   const out = { trades, summaries: summarizeTrades(trades) };
 
   const wb = new ExcelJS.Workbook();

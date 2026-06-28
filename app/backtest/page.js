@@ -71,7 +71,23 @@ export default function Backtest() {
   const [pairSel, setPairSel] = useState([]); // empty = all
   const [monthSel, setMonthSel] = useState(null); // "YYYY-MM" or null = all months
   const [period, setPeriod] = useState("recent"); // "recent" | "2023" | "2024" | ...
+  const [exclFrom, setExclFrom] = useState(""); // "HH:MM" IST — start of excluded window
+  const [exclTo, setExclTo] = useState(""); // "HH:MM" IST — end of excluded window
   const toast = useToast();
+
+  const toMin = (hm) => {
+    if (!hm) return null;
+    const [h, m] = hm.split(":").map(Number);
+    return h * 60 + m;
+  };
+  const exclActive = exclFrom !== "" && exclTo !== "" && exclFrom !== exclTo;
+  const inExcl = (t) => {
+    const f = toMin(exclFrom);
+    const tt = toMin(exclTo);
+    const [h, m] = t.time.slice(11, 16).split(":").map(Number);
+    const min = h * 60 + m;
+    return f < tt ? min >= f && min < tt : min >= f || min < tt;
+  };
 
   const LOOKBACK_DAYS = 180; // ~6 months of history for the monthly breakdown
   const nowYear = new Date().getUTCFullYear();
@@ -140,13 +156,17 @@ export default function Backtest() {
     [data]
   );
 
-  // trades narrowed by pair only — used for the monthly breakdown (all months)
+  // trades narrowed by pair + excluded time-of-day window — feeds the monthly
+  // breakdown (so removed trades drop out of the win rates too)
   const pairFiltered = useMemo(() => {
     if (!data) return [];
-    return pairSel.length
+    let rows = pairSel.length
       ? data.trades.filter((t) => pairSel.includes(t.pair))
       : data.trades;
-  }, [data, pairSel]);
+    if (exclActive) rows = rows.filter((t) => !inExcl(t));
+    return rows;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, pairSel, exclActive, exclFrom, exclTo]);
 
   const months = useMemo(() => summarizeByMonth(pairFiltered), [pairFiltered]);
 
@@ -175,9 +195,13 @@ export default function Backtest() {
     } else {
       q.set("days", String(LOOKBACK_DAYS));
     }
+    if (exclActive) {
+      q.set("exclFrom", String(toMin(exclFrom)));
+      q.set("exclTo", String(toMin(exclTo)));
+    }
     return "/api/backtest/export?" + q.toString();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pairSel, monthSel, period]);
+  }, [pairSel, monthSel, period, exclActive, exclFrom, exclTo]);
 
   const reset = () => {
     setPairSel([]);
@@ -280,6 +304,43 @@ export default function Backtest() {
           <span className="text-[11px] text-muted ml-auto">
             {filtered.length} of {data.trades.length} trades
           </span>
+        </div>
+      )}
+
+      {/* exclude time-of-day window */}
+      {data && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wide text-muted mr-1">Exclude time (IST)</span>
+          <input
+            type="time"
+            value={exclFrom}
+            onChange={(e) => setExclFrom(e.target.value)}
+            className="bg-panel2 border border-border rounded-md px-2 py-1.5 text-xs outline-none focus:border-accent/60"
+          />
+          <span className="text-muted text-xs">to</span>
+          <input
+            type="time"
+            value={exclTo}
+            onChange={(e) => setExclTo(e.target.value)}
+            className="bg-panel2 border border-border rounded-md px-2 py-1.5 text-xs outline-none focus:border-accent/60"
+          />
+          {exclActive ? (
+            <>
+              <span className="text-[11px] text-bear">
+                removing trades {exclFrom}–{exclTo}
+              </span>
+              <button
+                onClick={() => { setExclFrom(""); setExclTo(""); }}
+                className="text-xs px-2.5 py-1.5 rounded-md border border-border bg-panel2 text-muted hover:text-ink transition"
+              >
+                Clear
+              </button>
+            </>
+          ) : (
+            <span className="text-[11px] text-muted">
+              set both times to drop trades opened in that window (e.g. 00:00–06:00)
+            </span>
+          )}
         </div>
       )}
 
