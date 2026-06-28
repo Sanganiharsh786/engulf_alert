@@ -3,7 +3,7 @@ import { readStore } from "@/lib/store";
 import { verifyEmail } from "@/lib/mailer";
 import { detectEngulfing } from "@/lib/engulfing";
 import { tradingViewLink } from "@/lib/scanner";
-import ccxt from "ccxt";
+import { fetchOHLCV } from "@/lib/market";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,9 +41,8 @@ export async function POST() {
   try {
     const details = [];
     for (const p of store.pairs) {
-      const ex = new ccxt[p.exchange]({ enableRateLimit: true });
       const tf = p.timeframe || store.settings.timeframe || "15m";
-      const r = await ex.fetchOHLCV(p.symbol, tf, undefined, 2);
+      const r = await fetchOHLCV(p, tf, 2);
       details.push(`${p.name} ${r[r.length - 1][4]}`);
     }
     checks.push({ name: "Fetch live data", pass: true, detail: details.join("  ·  ") });

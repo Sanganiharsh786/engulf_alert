@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readStore } from "@/lib/store";
-import ccxt from "ccxt";
+import { fetchOHLCV } from "@/lib/market";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,9 +14,8 @@ export async function GET(req) {
     if (!pair) {
       return NextResponse.json({ error: "pair not found" }, { status: 404 });
     }
-    const ex = new ccxt[pair.exchange]({ enableRateLimit: true });
     const tf = pair.timeframe || store.settings.timeframe || "15m";
-    const rows = await ex.fetchOHLCV(pair.symbol, tf, undefined, 60);
+    const rows = await fetchOHLCV(pair, tf, 60);
     return NextResponse.json({ rows, tf });
   } catch (e) {
     return NextResponse.json({ error: String(e.message || e) }, { status: 500 });
