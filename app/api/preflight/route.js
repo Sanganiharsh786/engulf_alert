@@ -4,11 +4,14 @@ import { verifyEmail } from "@/lib/mailer";
 import { detectEngulfing } from "@/lib/engulfing";
 import { tradingViewLink } from "@/lib/scanner";
 import { fetchOHLCV } from "@/lib/market";
+import { currentUser } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST() {
+  const user = await currentUser();
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const checks = [];
 
   // 1 - detection logic
@@ -25,7 +28,7 @@ export async function POST() {
   // 2 - config + levels
   let store;
   try {
-    store = await readStore();
+    store = await readStore(user);
     const nLevels = store.pairs.reduce((a, p) => a + p.levels.length, 0);
     checks.push({
       name: "Config + levels",

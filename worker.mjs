@@ -5,19 +5,24 @@
 //
 import { readStore, writeStore } from "./lib/store.js";
 import { runScan } from "./lib/scanner.js";
+import { listUsers } from "./lib/auth.js";
 
 async function loop() {
   let waitMs = 60000;
   try {
-    const store = await readStore();
-    waitMs = (store.settings.pollIntervalSeconds || 60) * 1000;
-    const out = await runScan(store);
-    await writeStore(store);
-    const alerts = out.results.reduce((a, r) => a + ((r.alerts && r.alerts.length) || 0), 0);
-    const line = out.results
-      .map((r) => (r.status === "error" ? `${r.pair}:ERR` : `${r.pair}:${r.direction || "-"}`))
-      .join("  ");
-    console.log(new Date().toISOString(), `| ${line} | new alerts: ${alerts}`);
+    const lines = [];
+    for (const user of listUsers()) {
+      const store = await readStore(user);
+      waitMs = (store.settings.pollIntervalSeconds || 60) * 1000;
+      const out = await runScan(store, {});
+      await writeStore(user, store);
+      const alerts = out.results.reduce((a, r) => a + ((r.alerts && r.alerts.length) || 0), 0);
+      const pairs = out.results
+        .map((r) => (r.status === "error" ? `${r.pair}:ERR` : `${r.pair}:${r.direction || "-"}`))
+        .join(" ");
+      lines.push(`${user}[ ${pairs} ] alerts:${alerts}`);
+    }
+    console.log(new Date().toISOString(), "|", lines.join("  ||  "));
   } catch (e) {
     console.error(new Date().toISOString(), "| scan error:", e.message || e);
   }

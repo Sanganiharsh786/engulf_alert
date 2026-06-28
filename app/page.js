@@ -25,15 +25,31 @@ export default function Dashboard() {
   const [auto, setAuto] = useState(false);
   const [preflight, setPreflight] = useState(null);
   const [pfRunning, setPfRunning] = useState(false);
+  const [user, setUser] = useState(null);
   const timer = useRef(null);
 
   /* load config */
   useEffect(() => {
     fetch("/api/config")
-      .then((r) => r.json())
-      .then((s) => setStore(s))
+      .then((r) => {
+        if (r.status === 401) {
+          window.location.href = "/login";
+          return null;
+        }
+        return r.json();
+      })
+      .then((s) => {
+        if (!s) return;
+        setStore(s);
+        setUser(s.user || null);
+      })
       .catch(() => setStore({ settings: {}, pairs: [] }));
   }, []);
+
+  async function logout() {
+    await fetch("/api/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
 
   /* auto-scan loop */
   useEffect(() => {
@@ -115,6 +131,8 @@ export default function Dashboard() {
         onScan={scanNow}
         onPreflight={runPreflight}
         pfRunning={pfRunning}
+        user={user}
+        onLogout={logout}
       />
 
       {preflight && <Preflight checks={preflight} onClose={() => setPreflight(null)} />}
@@ -173,7 +191,7 @@ export default function Dashboard() {
 }
 
 /* ---------- top bar ---------- */
-function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onScan, onPreflight, pfRunning }) {
+function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onScan, onPreflight, pfRunning, user, onLogout }) {
   return (
     <header className="flex flex-wrap items-center gap-3 justify-between border-b border-border pb-4">
       <div className="flex items-center gap-3">
@@ -188,6 +206,14 @@ function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onSc
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        {user && (
+          <span className="flex items-center gap-2 text-xs px-3 py-2 rounded-md border border-border bg-panel text-muted">
+            <span className="h-5 w-5 rounded-full bg-accent/20 text-accent flex items-center justify-center text-[10px] font-bold uppercase">
+              {user.slice(0, 1)}
+            </span>
+            {user}
+          </span>
+        )}
         <button
           onClick={onPreflight}
           disabled={pfRunning}
@@ -213,6 +239,15 @@ function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onSc
             className="text-xs px-3 py-2 rounded-md bg-bull text-white font-medium hover:brightness-110 transition disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save changes"}
+          </button>
+        )}
+        {user && (
+          <button
+            onClick={onLogout}
+            className="text-xs px-3 py-2 rounded-md border border-border bg-panel hover:bg-bear/15 hover:text-bear hover:border-bear/40 transition"
+            title="Sign out"
+          >
+            Logout
           </button>
         )}
       </div>
