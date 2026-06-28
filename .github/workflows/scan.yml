@@ -10,6 +10,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Call /api/scan
+        env:
+          SCAN_URL: ${{ secrets.SCAN_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          curl -sf -X GET "${{ secrets.SCAN_URL }}" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+          if [ -z "$SCAN_URL" ]; then
+            echo "::error::SCAN_URL secret is not set. Add it under Settings > Secrets and variables > Actions (e.g. https://<your-app>.vercel.app/api/scan)."
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::CRON_SECRET secret is not set. It must match CRON_SECRET in your Vercel environment variables."
+            exit 1
+          fi
+          echo "Calling scan endpoint: $SCAN_URL"
+          curl -sf --show-error \
+            --retry 3 --retry-delay 5 --retry-connrefused \
+            --max-time 60 \
+            -X GET "$SCAN_URL" \
+            -H "Authorization: Bearer $CRON_SECRET"
