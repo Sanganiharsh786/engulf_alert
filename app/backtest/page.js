@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useToast } from "../toast";
 
 const fmt = (n) =>
   n === null || n === undefined || n === ""
@@ -48,8 +49,9 @@ export default function Backtest() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [pairSel, setPairSel] = useState([]); // empty = all
+  const toast = useToast();
 
-  async function run() {
+  async function run({ notify = true } = {}) {
     setLoading(true);
     setError("");
     try {
@@ -59,17 +61,23 @@ export default function Backtest() {
         return;
       }
       const json = await res.json();
-      if (json.error) setError(json.error);
-      else setData(json);
+      if (json.error) {
+        setError(json.error);
+        toast(`Backtest failed · ${json.error}`, "error");
+      } else {
+        setData(json);
+        if (notify) toast(`Backtest complete · ${json.trades.length} trades`, "success");
+      }
     } catch (e) {
       setError(String(e.message || e));
+      toast(`Backtest failed · ${e.message || e}`, "error");
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    run();
+    run({ notify: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -134,6 +142,7 @@ export default function Backtest() {
           </button>
           <a
             href={exportUrl}
+            onClick={() => toast("Preparing Excel export…", "info")}
             className="text-xs px-3 py-2 rounded-md bg-bull text-white font-medium hover:brightness-110 transition"
           >
             ⬇ Export Excel

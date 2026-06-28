@@ -1,4 +1,5 @@
 import "./globals.css";
+import { ToastProvider } from "./toast";
 
 export const metadata = {
   title: "Engulfing Alerts",
@@ -9,7 +10,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className="font-sans bg-bg text-ink antialiased min-h-screen">
-        {children}
+        <ToastProvider>{children}</ToastProvider>
       </body>
     </html>
   );

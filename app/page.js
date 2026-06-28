@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { buildChartSVG } from "@/lib/chart";
+import { useToast } from "./toast";
 
 /* ---------- small helpers ---------- */
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -36,6 +37,7 @@ export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [pastLoading, setPastLoading] = useState(false);
   const timer = useRef(null);
+  const toast = useToast();
 
   /* load config */
   useEffect(() => {
@@ -82,12 +84,16 @@ export default function Dashboard() {
     if (!store) return;
     setSaving(true);
     try {
-      await fetch("/api/config", {
+      const res = await fetch("/api/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ settings: store.settings, pairs: store.pairs }),
       });
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
       setDirty(false);
+      toast("Settings saved", "success");
+    } catch (e) {
+      toast(String(e.message || e), "error");
     } finally {
       setSaving(false);
     }
@@ -98,6 +104,7 @@ export default function Dashboard() {
     setScanning(true);
     try {
       const res = await fetch("/api/scan", { method: "POST" }).then((r) => r.json());
+      if (res.error) throw new Error(res.error);
       const byName = {};
       (res.results || []).forEach((r) => (byName[r.pair] = r));
       setResults(byName);
@@ -105,7 +112,12 @@ export default function Dashboard() {
       const newAlerts = (res.results || []).flatMap((r) => r.alerts || []);
       if (newAlerts.length) {
         setSignals((prev) => [...newAlerts.map((a) => ({ ...a, at: res.scannedAt })), ...prev].slice(0, 50));
+        toast(`Scan complete · ${newAlerts.length} new signal${newAlerts.length > 1 ? "s" : ""}`, "success");
+      } else {
+        toast("Scan complete · no new signals", "info");
       }
+    } catch (e) {
+      toast(`Scan failed · ${e.message || e}`, "error");
     } finally {
       setScanning(false);
     }
@@ -116,14 +128,22 @@ export default function Dashboard() {
     setPastLoading(true);
     try {
       const res = await fetch("/api/history", { method: "POST" }).then((r) => r.json());
+      if (res.error) throw new Error(res.error);
       const sigs = (res.signals || []).filter((s) => s.ts);
-      if (sigs.length) {
-        setSignals((prev) => {
-          const seen = new Set(prev.map((p) => `${p.pair}|${p.ts}|${p.direction}`));
-          const fresh = sigs.filter((s) => !seen.has(`${s.pair}|${s.ts}|${s.direction}`));
-          return [...fresh, ...prev].slice(0, 100);
-        });
+      const seen = new Set(signals.map((p) => `${p.pair}|${p.ts}|${p.direction}`));
+      const fresh = sigs.filter((s) => !seen.has(`${s.pair}|${s.ts}|${s.direction}`));
+      const freshCount = fresh.length;
+      if (fresh.length) {
+        setSignals((prev) => [...fresh, ...prev].slice(0, 100));
       }
+      toast(
+        freshCount
+          ? `Found ${freshCount} new past signal${freshCount > 1 ? "s" : ""}`
+          : "No new past signals found",
+        freshCount ? "success" : "info"
+      );
+    } catch (e) {
+      toast(`Past signals failed · ${e.message || e}`, "error");
     } finally {
       setPastLoading(false);
     }
@@ -135,7 +155,13 @@ export default function Dashboard() {
     setPreflight(null);
     try {
       const res = await fetch("/api/preflight", { method: "POST" }).then((r) => r.json());
-      setPreflight(res.checks || []);
+      const checks = res.checks || [];
+      setPreflight(checks);
+      const failed = checks.filter((c) => !c.pass).length;
+      if (failed) toast(`Check finished · ${failed} of ${checks.length} failed`, "error");
+      else toast(`All ${checks.length} checks passed`, "success");
+    } catch (e) {
+      toast(`Check failed · ${e.message || e}`, "error");
     } finally {
       setPfRunning(false);
     }
@@ -623,16 +649,16 @@ function Settings({ settings, mutate }) {
   const email = settings.email || {};
   const risk = settings.risk || {};
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState(null);
+  const toast = useToast();
 
   async function sendTest() {
     setTesting(true);
-    setTestResult(null);
     try {
       const res = await fetch("/api/test-email", { method: "POST" }).then((r) => r.json());
-      setTestResult(res.ok ? { ok: true, msg: `Sent to ${res.sentTo.join(", ")}` } : { ok: false, msg: res.error });
+      if (res.ok) toast(`Test email sent to ${res.sentTo.join(", ")}`, "success");
+      else toast(`Test email failed · ${res.error}`, "error");
     } catch (e) {
-      setTestResult({ ok: false, msg: String(e.message || e) });
+      toast(`Test email failed · ${e.message || e}`, "error");
     } finally {
       setTesting(false);
     }
@@ -699,12 +725,6 @@ function Settings({ settings, mutate }) {
           >
             {testing ? "Sending…" : "Send test email"}
           </button>
-          {testResult && (
-            <span className={`text-[11px] ${testResult.ok ? "text-bull" : "text-bear"}`}>
-              {testResult.ok ? "✓ " : "✕ "}
-              {testResult.msg}
-            </span>
-          )}
         </div>
       </div>
 
