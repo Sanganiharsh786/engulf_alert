@@ -45,7 +45,8 @@
           "low": 55945.4,
           "high": 56517.3
         }
-      ]
+      ],
+      "market": "crypto"
     },
     {
       "id": "eth",
@@ -88,7 +89,8 @@
           "low": 1888.84,
           "high": 1891.79
         }
-      ]
+      ],
+      "market": "crypto"
     },
     {
       "id": "paxg",
@@ -126,7 +128,8 @@
           "low": 4416.74,
           "high": 4424.87
         }
-      ]
+      ],
+      "market": "gold"
     }
   ],
   "alertedKeys": []

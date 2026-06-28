@@ -13,6 +13,14 @@ function tvLink(pair) {
   return `https://www.tradingview.com/chart/?symbol=${sym}`;
 }
 
+// FundedNext / MT5 standard contract & pip specs per market type
+const MARKET_PRESETS = {
+  crypto: { contractSize: 1, pipSize: 1 },
+  gold: { contractSize: 100, pipSize: 0.1 },
+  forex: { contractSize: 100000, pipSize: 0.0001 },
+  forexJPY: { contractSize: 100000, pipSize: 0.01 },
+};
+
 /* ---------- root ---------- */
 export default function Dashboard() {
   const [store, setStore] = useState(null);
@@ -175,6 +183,7 @@ export default function Dashboard() {
                     symbol: "NEW/USDT:USDT",
                     tradingview: "",
                     timeframe: null,
+                    market: "crypto",
                     leverage: 25,
                     contractSize: 1,
                     pipSize: 1,
@@ -245,6 +254,13 @@ function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onSc
         >
           {pfRunning ? "Checking…" : "Run check"}
         </button>
+        <a
+          href="/backtest"
+          className="text-xs px-3 py-2 rounded-md border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 transition"
+          title="Backtest results & Excel export"
+        >
+          Backtest
+        </a>
         <button
           onClick={onPast}
           disabled={pastLoading}
@@ -393,7 +409,31 @@ function PairCard({ pair, result, mutate }) {
         <Field label="Timeframe" value={pair.timeframe || ""} onChange={(v) => set("timeframe", v || null)} placeholder="default" />
       </div>
       {/* trade params (forex lot sizing) */}
-      <div className="grid grid-cols-3 gap-3 px-4 pt-3 pb-3 border-b border-border text-xs">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-4 pt-3 pb-3 border-b border-border text-xs">
+        <label className="block">
+          <span className="text-[10px] uppercase tracking-wide text-muted">Market</span>
+          <select
+            value={pair.market || "custom"}
+            onChange={(e) => {
+              const m = e.target.value;
+              mutate((s) => {
+                const p = s.pairs.find((x) => x.id === pair.id);
+                p.market = m;
+                if (MARKET_PRESETS[m]) {
+                  p.contractSize = MARKET_PRESETS[m].contractSize;
+                  p.pipSize = MARKET_PRESETS[m].pipSize;
+                }
+              });
+            }}
+            className="mt-1 w-full bg-panel2 border border-border rounded-md px-2 py-1.5 outline-none focus:border-accent/60"
+          >
+            <option value="crypto">Crypto</option>
+            <option value="gold">Gold (XAU)</option>
+            <option value="forex">Forex</option>
+            <option value="forexJPY">Forex (JPY)</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
         <Field
           label="Leverage (x)"
           value={pair.leverage ?? ""}
