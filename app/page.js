@@ -605,11 +605,9 @@ function Settings({ settings, mutate }) {
             <div className="grid grid-cols-2 gap-3">
               <RiskField label="Account size" value={risk.accountSize} onChange={(v) => setRisk("accountSize", v)} placeholder="1000" />
               <RiskField label="Risk % per trade" value={risk.riskPercent} onChange={(v) => setRisk("riskPercent", v)} placeholder="1" />
-              <RiskField label="Reward : Risk" value={risk.rewardRatio} onChange={(v) => setRisk("rewardRatio", v)} placeholder="2" />
-              <RiskField label="Pip size (USDT)" value={risk.pipSize} onChange={(v) => setRisk("pipSize", v)} placeholder="1" />
             </div>
             <p className="text-[10px] text-muted leading-relaxed">
-              Lot size is calculated so hitting the stop loses your risk %. SL sits just past the engulfing candle; TP uses the reward:risk ratio.
+              Lot size is calculated so hitting the stop loses your risk %. SL sits just past the engulfing candle; TP uses a 1:2 reward:risk.
               <span className="text-accent"> Leverage is set per pair</span> (in each pair card).
             </p>
           </>
