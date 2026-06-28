@@ -26,6 +26,7 @@ export default function Dashboard() {
   const [preflight, setPreflight] = useState(null);
   const [pfRunning, setPfRunning] = useState(false);
   const [user, setUser] = useState(null);
+  const [pastLoading, setPastLoading] = useState(false);
   const timer = useRef(null);
 
   /* load config */
@@ -102,6 +103,24 @@ export default function Dashboard() {
     }
   }
 
+  async function loadPast() {
+    if (dirty) await save();
+    setPastLoading(true);
+    try {
+      const res = await fetch("/api/history", { method: "POST" }).then((r) => r.json());
+      const sigs = (res.signals || []).filter((s) => s.ts);
+      if (sigs.length) {
+        setSignals((prev) => {
+          const seen = new Set(prev.map((p) => `${p.pair}|${p.ts}|${p.direction}`));
+          const fresh = sigs.filter((s) => !seen.has(`${s.pair}|${s.ts}|${s.direction}`));
+          return [...fresh, ...prev].slice(0, 100);
+        });
+      }
+    } finally {
+      setPastLoading(false);
+    }
+  }
+
   async function runPreflight() {
     if (dirty) await save();
     setPfRunning(true);
@@ -131,6 +150,8 @@ export default function Dashboard() {
         onScan={scanNow}
         onPreflight={runPreflight}
         pfRunning={pfRunning}
+        onPast={loadPast}
+        pastLoading={pastLoading}
         user={user}
         onLogout={logout}
       />
@@ -194,7 +215,7 @@ export default function Dashboard() {
 }
 
 /* ---------- top bar ---------- */
-function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onScan, onPreflight, pfRunning, user, onLogout }) {
+function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onScan, onPreflight, pfRunning, onPast, pastLoading, user, onLogout }) {
   return (
     <header className="flex flex-wrap items-center gap-3 justify-between border-b border-border pb-4">
       <div className="flex items-center gap-3">
@@ -223,6 +244,14 @@ function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onSc
           className="text-xs px-3 py-2 rounded-md border border-border bg-panel hover:bg-panel/70 transition disabled:opacity-50"
         >
           {pfRunning ? "Checking…" : "Run check"}
+        </button>
+        <button
+          onClick={onPast}
+          disabled={pastLoading}
+          className="text-xs px-3 py-2 rounded-md border border-gold/40 bg-gold/10 text-gold hover:bg-gold/20 transition disabled:opacity-50"
+          title="Find past engulfing signals at your levels and email any new ones"
+        >
+          {pastLoading ? "Searching…" : "Past signals"}
         </button>
         <label className="flex items-center gap-2 text-xs px-3 py-2 rounded-md border border-border bg-panel cursor-pointer select-none">
           <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="accent-accent" />
