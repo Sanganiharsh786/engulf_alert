@@ -250,7 +250,7 @@ export default function Dashboard() {
 }
 
 /* ---------- top bar ---------- */
-function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onScan, onPreflight, pfRunning, onPast, pastLoading, user, onLogout }) {
+function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onScan, onPreflight, pfRunning, user, onLogout }) {
   return (
     <header className="flex flex-wrap items-center gap-3 justify-between border-b border-border pb-4">
       <div className="flex items-center gap-3">
@@ -287,14 +287,7 @@ function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onSc
         >
           Backtest
         </a>
-        <button
-          onClick={onPast}
-          disabled={pastLoading}
-          className="text-xs px-3 py-2 rounded-md border border-gold/40 bg-gold/10 text-gold hover:bg-gold/20 transition disabled:opacity-50"
-          title="Find past engulfing signals at your levels and email any new ones"
-        >
-          {pastLoading ? "Searching…" : "Past signals"}
-        </button>
+     
         <label className="flex items-center gap-2 text-xs px-3 py-2 rounded-md border border-border bg-panel cursor-pointer select-none">
           <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="accent-accent" />
           Auto-scan
