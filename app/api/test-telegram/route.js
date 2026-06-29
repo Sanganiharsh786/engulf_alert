@@ -42,17 +42,19 @@ export async function POST(req) {
             </text>
           </svg>`;
           
-          const testCaption = `🚀 <b>Test Chart Message</b>
+          const testCaption = `TEST CHART from Engulfing Alerts Dashboard
+--------------------------------------
+This is exactly how your alerts will look!
 
-This is how your Telegram alerts will look with chart images!
+Chart Features:
+- Price levels marked with dashed lines  
+- Engulfing candle highlighted
+- Professional chart styling
+- Clear visual representation
 
-📊 <b>Features:</b>
-• Chart with highlighted engulfing patterns
-• Price levels marked
-• Signal candle highlighted
-• Full trade details in caption
+This SVG chart will open perfectly in any browser and shows exactly where the engulfing pattern occurred relative to your price levels.
 
-✅ Chart image functionality is working correctly!`;
+TradingView: https://tradingview.com`;
 
           const result = await sendTelegramPhoto(
             testSvg,
@@ -67,12 +69,13 @@ This is how your Telegram alerts will look with chart images!
           });
         } catch (error) {
           // Fallback to text message if image fails
-          const fallbackMessage = `🚀 Test message from Engulfing Alerts Dashboard
+          const fallbackMessage = `TEST MESSAGE from Engulfing Alerts Dashboard
+--------------------------------------
 
-❌ Chart image test failed: ${error.message}
+Chart test failed: ${error.message}
 
 But text messages are working correctly! 
-Chart images will be sent when available.`;
+Charts will be sent when the system detects engulfing patterns.`;
           
           const result = await sendTelegramMessage(
             fallbackMessage,
@@ -89,7 +92,7 @@ Chart images will be sent when available.`;
       } else {
         // Send regular text test message
         const result = await sendTelegramMessage(
-          message || "🚀 Test message from Engulfing Alerts Dashboard\n\nTelegram integration is working correctly!",
+          message || "TEST MESSAGE from Engulfing Alerts Dashboard\n--------------------------------------\n\nTelegram integration is working correctly!\n\nThis message format matches your email alerts exactly.",
           { botToken, chatId: targetChatId }
         );
         return NextResponse.json({ 
