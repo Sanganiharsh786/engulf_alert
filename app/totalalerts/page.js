@@ -145,6 +145,7 @@ export default function TotalAlerts() {
                   <th className="px-3 py-2.5 font-semibold">SL</th>
                   <th className="px-3 py-2.5 font-semibold">TP</th>
                   <th className="px-3 py-2.5 font-semibold">Lots</th>
+                  <th className="px-3 py-2.5 font-semibold">Alerts</th>
                   <th className="px-3 py-2.5 font-semibold">TV</th>
                 </tr>
               </thead>
@@ -186,6 +187,30 @@ export default function TotalAlerts() {
                     <td className="px-3 py-2.5 font-mono tnum text-bear">{fmt(a.position?.stop)}</td>
                     <td className="px-3 py-2.5 font-mono tnum text-bull">{fmt(a.position?.tp)}</td>
                     <td className="px-3 py-2.5 font-mono tnum text-accent">{fmt(a.position?.lots)}</td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-1">
+                        {a.emailed !== undefined && (
+                          <span
+                            className={`text-[10px] px-1 py-0.5 rounded ${
+                              a.emailed ? "bg-bull/15 text-bull" : "bg-bear/15 text-bear"
+                            }`}
+                            title={a.emailed ? "Email sent" : `Email failed: ${a.emailError || "Unknown error"}`}
+                          >
+                            📧
+                          </span>
+                        )}
+                        {a.telegramSent !== undefined && (
+                          <span
+                            className={`text-[10px] px-1 py-0.5 rounded ${
+                              a.telegramSent ? "bg-bull/15 text-bull" : "bg-bear/15 text-bear"
+                            }`}
+                            title={a.telegramSent ? "Telegram sent" : `Telegram failed: ${a.telegramError || "Unknown error"}`}
+                          >
+                            📱
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-3 py-2.5">
                       {a.link ? (
                         <a

@@ -641,14 +641,20 @@ function RiskField({ label, value, onChange, placeholder }) {
 function Settings({ settings, mutate }) {
   const setS = (field, value) => mutate((s) => (s.settings[field] = value));
   const setEmail = (field, value) => mutate((s) => (s.settings.email[field] = value));
+  const setTelegram = (field, value) => mutate((s) => {
+    if (!s.settings.telegram) s.settings.telegram = {};
+    s.settings.telegram[field] = value;
+  });
   const setRisk = (field, value) =>
     mutate((s) => {
       if (!s.settings.risk) s.settings.risk = {};
       s.settings.risk[field] = value;
     });
   const email = settings.email || {};
+  const telegram = settings.telegram || {};
   const risk = settings.risk || {};
   const [testing, setTesting] = useState(false);
+  const [telegramTesting, setTelegramTesting] = useState(false);
   const toast = useToast();
 
   async function sendTest() {
@@ -661,6 +667,44 @@ function Settings({ settings, mutate }) {
       toast(`Test email failed · ${e.message || e}`, "error");
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function sendTelegramTest() {
+    setTelegramTesting(true);
+    try {
+      const res = await fetch("/api/test-telegram", { 
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          message: "🚀 Test message from Engulfing Alerts Dashboard\n\nTelegram integration is working correctly!" 
+        })
+      }).then((r) => r.json());
+      if (res.success) toast("Test message sent to Telegram successfully", "success");
+      else toast(`Telegram test failed · ${res.error}`, "error");
+    } catch (e) {
+      toast(`Telegram test failed · ${e.message || e}`, "error");
+    } finally {
+      setTelegramTesting(false);
+    }
+  }
+
+  async function sendTelegramChartTest() {
+    setTelegramTesting(true);
+    try {
+      const res = await fetch("/api/test-telegram", { 
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          testChart: true
+        })
+      }).then((r) => r.json());
+      if (res.success) toast("Test chart image sent to Telegram successfully", "success");
+      else toast(`Telegram chart test failed · ${res.error}`, "error");
+    } catch (e) {
+      toast(`Telegram chart test failed · ${e.message || e}`, "error");
+    } finally {
+      setTelegramTesting(false);
     }
   }
 
@@ -725,6 +769,50 @@ function Settings({ settings, mutate }) {
           >
             {testing ? "Sending…" : "Send test email"}
           </button>
+        </div>
+      </div>
+
+      <div className="pt-2 border-t border-border space-y-3 text-xs">
+        <h3 className="text-[10px] uppercase tracking-wide text-muted">Telegram alerts</h3>
+        <Field 
+          label="Bot Token" 
+          value={telegram.botToken || ""} 
+          onChange={(v) => setTelegram("botToken", v)} 
+          mono 
+          placeholder="Get from @BotFather on Telegram"
+        />
+        <Field 
+          label="Chat ID" 
+          value={telegram.chatId || ""} 
+          onChange={(v) => setTelegram("chatId", v)} 
+          mono 
+          placeholder="Your chat ID or group chat ID"
+        />
+        
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            onClick={sendTelegramTest}
+            disabled={telegramTesting}
+            className="text-xs px-3 py-1.5 rounded-md bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 transition disabled:opacity-50"
+          >
+            {telegramTesting ? "Sending…" : "Send test message"}
+          </button>
+          <button
+            onClick={sendTelegramChartTest}
+            disabled={telegramTesting}
+            className="text-xs px-3 py-1.5 rounded-md bg-bull/15 text-bull border border-bull/30 hover:bg-bull/25 transition disabled:opacity-50"
+          >
+            {telegramTesting ? "Sending…" : "Test chart image"}
+          </button>
+        </div>
+        
+        <div className="text-[11px] text-muted bg-panel2 border border-border rounded-md p-2 space-y-1">
+          <p><strong>Setup Instructions:</strong></p>
+          <p>1. Create a bot by messaging @BotFather on Telegram</p>
+          <p>2. Copy the bot token and paste above</p>
+          <p>3. Start a chat with your bot or add it to a group</p>
+          <p>4. Get your Chat ID from @userinfobot</p>
+          <p>5. Test the connection using the button above</p>
         </div>
       </div>
 

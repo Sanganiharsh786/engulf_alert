@@ -11,6 +11,12 @@
       "recipients": [
         "sanganip165@gmail.com"
       ]
+    },
+    "telegram": {
+      "enabled": false,
+      "botToken": "",
+      "chatId": "",
+      "notifications": true
     }
   },
   "pairs": [
