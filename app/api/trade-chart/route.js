@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { currentUser } from "@/lib/session";
 import { readStore } from "@/lib/store";
-import { fetchOHLCV } from "@/lib/market";
+import { fetchOHLCV, fetchOHLCVRange, tfSeconds } from "@/lib/market";
 import { buildChartSVG } from "@/lib/chart";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ export async function POST(req) {
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   
   try {
-    const { pairName, timestamp, entry, stop, tp, direction } = await req.json();
+    const { pairName, timestamp, entry, stop, tp, direction, levelLow, levelHigh } = await req.json();
     
     if (!pairName || !timestamp) {
       return NextResponse.json({ error: "missing required fields" }, { status: 400 });
@@ -25,20 +25,33 @@ export async function POST(req) {
       return NextResponse.json({ error: "pair not found" }, { status: 404 });
     }
 
-    // Fetch chart data - get more candles around the signal for context
+    // Fetch chart data around the trade's timestamp (historical data)
     // Show 20 candles before and 30 after the engulfing pattern
     const tf = pair.timeframe || store.settings.timeframe || "15m";
-    const chartData = await fetchOHLCV(pair, tf, 50);
+    const tfMs = tfSeconds(tf) * 1000;
+    const signalTs = Number(timestamp);
     
-    // Find the signal candle and create a window around it
-    const signalIndex = chartData.findIndex(candle => candle[0] === timestamp);
-    let windowStart = Math.max(0, signalIndex - 20);
-    let windowEnd = Math.min(chartData.length, signalIndex + 30);
+    // Calculate time window around the signal
+    const startMs = signalTs - (25 * tfMs);
+    const endMs = signalTs + (35 * tfMs);
     
-    // If signal not found, just show recent candles
-    if (signalIndex === -1) {
-      windowStart = Math.max(0, chartData.length - 50);
-      windowEnd = chartData.length;
+    let chartData;
+    try {
+      // Fetch historical candles around the signal time
+      chartData = await fetchOHLCVRange(pair, tf, startMs, endMs);
+    } catch (e) {
+      console.warn("Historical fetch failed, falling back to recent candles:", e.message);
+      chartData = await fetchOHLCV(pair, tf, 60);
+    }
+    
+    // Find the signal candle
+    const signalIndex = chartData.findIndex(candle => candle[0] === signalTs);
+    let windowStart = 0;
+    let windowEnd = chartData.length;
+    
+    if (signalIndex !== -1) {
+      windowStart = Math.max(0, signalIndex - 20);
+      windowEnd = Math.min(chartData.length, signalIndex + 30);
     }
     
     const windowData = chartData.slice(windowStart, windowEnd);
@@ -48,11 +61,13 @@ export async function POST(req) {
       pair,
       tf,
       rows: windowData,
-      signalTs: timestamp,
+      signalTs: signalTs,
       direction,
       entry: parseFloat(entry),
       stop: parseFloat(stop),
-      tp: parseFloat(tp)
+      tp: parseFloat(tp),
+      levelLow: levelLow !== undefined ? parseFloat(levelLow) : null,
+      levelHigh: levelHigh !== undefined ? parseFloat(levelHigh) : null,
     });
 
     return NextResponse.json({ svg });

@@ -780,6 +780,14 @@ function HoverChart({ trade, onClose }) {
         setLoading(true);
         setError("");
         
+        // Parse level string like "62842.5-63104.4" into low/high values
+        let levelLow, levelHigh;
+        if (trade.level && typeof trade.level === 'string' && trade.level.includes('-')) {
+          const parts = trade.level.split('-');
+          levelLow = parseFloat(parts[0]);
+          levelHigh = parseFloat(parts[1]);
+        }
+
         const response = await fetch("/api/trade-chart", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -789,7 +797,9 @@ function HoverChart({ trade, onClose }) {
             entry: trade.entry,
             stop: trade.stop,
             tp: trade.tp,
-            direction: trade.direction
+            direction: trade.direction,
+            levelLow,
+            levelHigh,
           }),
         });
         
