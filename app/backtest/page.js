@@ -115,6 +115,8 @@ export default function Backtest() {
   const [exclFrom, setExclFrom] = useState(""); // "HH:MM" IST — start of excluded window
   const [exclTo, setExclTo] = useState(""); // "HH:MM" IST — end of excluded window
   const [showCalendar, setShowCalendar] = useState(false); // toggle calendar view
+  const [hoveredTrade, setHoveredTrade] = useState(null); // for chart preview
+  const [chartPosition, setChartPosition] = useState({ x: 0, y: 0 }); // tooltip position
   const toast = useToast();
 
   const toMin = (hm) => {
@@ -529,6 +531,15 @@ export default function Backtest() {
           />
         </div>
       )}
+      
+      {/* Hover Chart Tooltip */}
+      {hoveredTrade && (
+        <HoverChart 
+          trade={hoveredTrade} 
+          position={chartPosition}
+          onClose={() => setHoveredTrade(null)}
+        />
+      )}
 
       {loading && !data && (
         <div className="mt-10 text-center text-muted text-sm">Running backtest…</div>
@@ -583,7 +594,19 @@ export default function Backtest() {
                 </thead>
                 <tbody className="font-mono tnum">
                   {filtered.map((t, i) => (
-                    <tr key={i} className="border-b border-border/50 hover:bg-panel2">
+                    <tr 
+                      key={i} 
+                      className="border-b border-border/50 hover:bg-panel2 cursor-pointer"
+                      onMouseEnter={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setChartPosition({ 
+                          x: rect.left + rect.width + 10, 
+                          y: rect.top 
+                        });
+                        setHoveredTrade(t);
+                      }}
+                      onMouseLeave={() => setHoveredTrade(null)}
+                    >
                       <td className="px-3 py-1.5 whitespace-nowrap">{t.time}</td>
                       <td className="px-3 py-1.5">{t.day}</td>
                       <td className="px-3 py-1.5 whitespace-nowrap">{t.pair}</td>
@@ -734,6 +757,144 @@ function Calendar({ monthKey, days, selectedDay, onDayClick }) {
         <div className="flex items-center gap-1">
           <div className="w-3 h-3 rounded bg-bear/20 border border-bear/40"></div>
           <span>&lt;50% win rate</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HoverChart({ trade, position, onClose }) {
+  const [chartSVG, setChartSVG] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+    
+    const fetchChart = async () => {
+      try {
+        setLoading(true);
+        setError("");
+        
+        const response = await fetch("/api/trade-chart", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pairName: trade.pair,
+            timestamp: trade.ts,
+            entry: trade.entry,
+            stop: trade.stop,
+            tp: trade.tp,
+            direction: trade.direction
+          }),
+        });
+        
+        if (!mounted) return;
+        
+        if (response.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
+        
+        const data = await response.json();
+        if (data.error) {
+          setError(data.error);
+        } else {
+          setChartSVG(data.svg);
+        }
+      } catch (e) {
+        if (mounted) {
+          setError(String(e.message || e));
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchChart();
+    
+    return () => {
+      mounted = false;
+    };
+  }, [trade]);
+
+  // Position the tooltip - make sure it doesn't go off screen
+  const maxX = typeof window !== 'undefined' ? window.innerWidth - 420 : 1000; // chart width
+  const maxY = typeof window !== 'undefined' ? window.innerHeight - 320 : 600; // chart height
+  const x = Math.max(10, Math.min(position.x, maxX));
+  const y = Math.max(10, Math.min(position.y, maxY));
+
+  return (
+    <div
+      className="fixed z-50 bg-panel border-2 border-accent/60 rounded-lg shadow-2xl"
+      style={{
+        left: `${x}px`,
+        top: `${y}px`,
+        width: typeof window !== 'undefined' && window.innerWidth < 600 ? "300px" : "400px",
+        maxHeight: "300px"
+      }}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between p-3 border-b border-border">
+        <div className="text-sm font-semibold">
+          {trade.pair} · {trade.time} · {trade.direction?.toUpperCase()} ENGULF
+        </div>
+        <button
+          onClick={onClose}
+          className="text-muted hover:text-ink transition text-lg leading-none"
+        >
+          ×
+        </button>
+      </div>
+      
+      {/* Chart Content */}
+      <div className="p-2">
+        {loading && (
+          <div className="flex items-center justify-center h-48 text-muted text-sm">
+            Loading chart...
+          </div>
+        )}
+        
+        {error && (
+          <div className="flex items-center justify-center h-48 text-bear text-sm">
+            Error: {error}
+          </div>
+        )}
+        
+        {chartSVG && !loading && !error && (
+          <div 
+            className="w-full h-48"
+            dangerouslySetInnerHTML={{ __html: chartSVG }}
+          />
+        )}
+      </div>
+      
+      {/* Trade Details Footer */}
+      <div className="p-3 border-t border-border bg-panel2/50 text-xs font-mono">
+        <div className="grid grid-cols-4 gap-2 text-center">
+          <div>
+            <div className="text-muted">Entry</div>
+            <div className="text-accent font-bold">{fmt(trade.entry)}</div>
+          </div>
+          <div>
+            <div className="text-muted">Stop</div>
+            <div className="text-bear font-bold">{fmt(trade.stop)}</div>
+          </div>
+          <div>
+            <div className="text-muted">TP</div>
+            <div className="text-bull font-bold">{fmt(trade.tp)}</div>
+          </div>
+          <div>
+            <div className="text-muted">Outcome</div>
+            <div className={`font-bold ${
+              trade.outcome === "win" ? "text-bull" : 
+              trade.outcome === "loss" ? "text-bear" : "text-muted"
+            }`}>
+              {trade.outcome.toUpperCase()}
+            </div>
+          </div>
         </div>
       </div>
     </div>
