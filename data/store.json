@@ -43,8 +43,8 @@
         },
         {
           "id": "b3",
-          "low": 59656.5,
-          "high": 59803.9
+          "low": 59656,
+          "high": 59803
         },
         {
           "id": "b4",
@@ -94,6 +94,50 @@
           "id": "e6",
           "low": 1888.84,
           "high": 1891.79
+        }
+      ],
+      "market": "crypto"
+    },
+    {
+      "id": "eurusdt",
+      "name": "EURUSDT",
+      "exchange": "binance",
+      "symbol": "EUR/USDT:USDT",
+      "tradingview": "BINANCE:EURUSDT",
+      "timeframe": null,
+      "leverage": 25,
+      "contractSize": 1,
+      "pipSize": 0.0001,
+      "levels": [
+        {
+          "id": "eur1",
+          "low": 1.13584,
+          "high": 1.13643
+        },
+        {
+          "id": "eur2",
+          "low": 1.12649,
+          "high": 1.12651
+        },
+        {
+          "id": "eur3",
+          "low": 1.14508,
+          "high": 1.14573
+        },
+        {
+          "id": "eur4",
+          "low": 1.15059,
+          "high": 1.15120
+        },
+        {
+          "id": "eur5",
+          "low": 1.15762,
+          "high": 1.15814
+        },
+        {
+          "id": "eur6",
+          "low": 1.10901,
+          "high": 1.11061
         }
       ],
       "market": "crypto"
