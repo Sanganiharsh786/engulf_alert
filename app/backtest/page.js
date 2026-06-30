@@ -64,15 +64,57 @@ function summarizeByMonth(trades) {
     }));
 }
 
+// win rate per IST calendar day ("YYYY-MM-DD" from the trade's IST time)
+function summarizeByDay(trades) {
+  const byDay = {};
+  for (const t of trades) {
+    const key = t.time.slice(0, 10); // "YYYY-MM-DD" in IST
+    const s = (byDay[key] = byDay[key] || {
+      key, date: key, signals: 0, closed: 0, wins: 0, losses: 0, netR: 0,
+    });
+    s.signals++;
+    if (t.outcome !== "open") {
+      s.closed++;
+      if (t.outcome === "win") s.wins++;
+      else if (t.outcome === "loss") s.losses++;
+      s.netR += t.r;
+    }
+  }
+  return Object.values(byDay)
+    .sort((a, b) => (a.key < b.key ? -1 : 1)) // oldest first for calendar display
+    .map((s) => ({
+      ...s,
+      netR: Math.round(s.netR * 100) / 100,
+      winRate: s.closed ? Math.round((s.wins / s.closed) * 1000) / 10 : 0,
+    }));
+}
+
+// get today's date in IST format
+function getTodayIST() {
+  const now = new Date();
+  const istTime = new Date(now.getTime() + IST_OFFSET_MS);
+  return istTime.toISOString().slice(0, 10); // "YYYY-MM-DD"
+}
+
+// get date 6 months ago in IST format
+function getSixMonthsAgoIST() {
+  const now = new Date();
+  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+  const istTime = new Date(sixMonthsAgo.getTime() + IST_OFFSET_MS);
+  return istTime.toISOString().slice(0, 10); // "YYYY-MM-DD"
+}
+
 export default function Backtest() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [pairSel, setPairSel] = useState([]); // empty = all
   const [monthSel, setMonthSel] = useState(null); // "YYYY-MM" or null = all months
-  const [period, setPeriod] = useState("recent"); // "recent" | "2023" | "2024" | ...
+  const [daySel, setDaySel] = useState(null); // "YYYY-MM-DD" or null = all days
+  const [period, setPeriod] = useState("recent"); // "recent" | "today" | "2023" | "2024" | ...
   const [exclFrom, setExclFrom] = useState(""); // "HH:MM" IST — start of excluded window
   const [exclTo, setExclTo] = useState(""); // "HH:MM" IST — end of excluded window
+  const [showCalendar, setShowCalendar] = useState(false); // toggle calendar view
   const toast = useToast();
 
   const toMin = (hm) => {
@@ -107,11 +149,23 @@ export default function Backtest() {
     setLoading(true);
     setError("");
     setMonthSel(null);
+    setDaySel(null);
+    setShowCalendar(false);
     try {
-      const body =
-        sel === "recent"
-          ? { days: LOOKBACK_DAYS }
-          : yearRange(sel);
+      let body;
+      if (sel === "recent") {
+        body = { days: LOOKBACK_DAYS };
+      } else if (sel === "today") {
+        const today = getTodayIST();
+        const todayStart = new Date(today + "T00:00:00.000Z").getTime() - IST_OFFSET_MS;
+        const todayEnd = new Date(today + "T23:59:59.999Z").getTime() - IST_OFFSET_MS;
+        body = { from: todayStart, to: todayEnd };
+      } else if (sel === "last6months") {
+        body = { days: 180 }; // approximately 6 months
+      } else {
+        body = yearRange(sel);
+      }
+      
       const res = await fetch("/api/backtest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -127,11 +181,15 @@ export default function Backtest() {
         toast(`Backtest failed · ${json.error}`, "error");
       } else {
         setData(json);
-        if (notify)
+        if (notify) {
+          let periodLabel = sel === "recent" ? "last 6 months" : 
+                           sel === "today" ? "today" :
+                           sel === "last6months" ? "last 6 months" : sel;
           toast(
-            `Backtest complete · ${json.trades.length} trades · ${sel === "recent" ? "last 6 months" : sel}`,
+            `Backtest complete · ${json.trades.length} trades · ${periodLabel}`,
             "success"
           );
+        }
       }
     } catch (e) {
       setError(String(e.message || e));
@@ -169,12 +227,25 @@ export default function Backtest() {
   }, [data, pairSel, exclActive, exclFrom, exclTo]);
 
   const months = useMemo(() => summarizeByMonth(pairFiltered), [pairFiltered]);
+  
+  // daily breakdown for calendar view (only when a month is selected)
+  const days = useMemo(() => {
+    if (!monthSel) return [];
+    const monthTrades = pairFiltered.filter((t) => t.time.slice(0, 7) === monthSel);
+    return summarizeByDay(monthTrades);
+  }, [pairFiltered, monthSel]);
 
-  // trades for the table/cards — pair + selected month
-  const filtered = useMemo(
-    () => (monthSel ? pairFiltered.filter((t) => t.time.slice(0, 7) === monthSel) : pairFiltered),
-    [pairFiltered, monthSel]
-  );
+  // trades for the table/cards — pair + selected month + selected day
+  const filtered = useMemo(() => {
+    let result = pairFiltered;
+    if (monthSel) {
+      result = result.filter((t) => t.time.slice(0, 7) === monthSel);
+    }
+    if (daySel) {
+      result = result.filter((t) => t.time.slice(0, 10) === daySel);
+    }
+    return result;
+  }, [pairFiltered, monthSel, daySel]);
 
   const summaries = useMemo(() => summarize(filtered), [filtered]);
 
@@ -184,10 +255,24 @@ export default function Backtest() {
   const exportUrl = useMemo(() => {
     const q = new URLSearchParams();
     if (pairSel.length) q.set("pairs", pairSel.join(","));
-    if (monthSel) {
+    if (daySel) {
+      // Single day export
+      const dayStart = new Date(daySel + "T00:00:00.000Z").getTime() - IST_OFFSET_MS;
+      const dayEnd = new Date(daySel + "T23:59:59.999Z").getTime() - IST_OFFSET_MS;
+      q.set("from", String(dayStart));
+      q.set("to", String(dayEnd));
+    } else if (monthSel) {
       const [y, m] = monthSel.split("-").map(Number);
       q.set("from", String(Date.UTC(y, m - 1, 1) - IST_OFFSET_MS));
       q.set("to", String(Date.UTC(y, m, 1) - IST_OFFSET_MS - 1));
+    } else if (period === "today") {
+      const today = getTodayIST();
+      const todayStart = new Date(today + "T00:00:00.000Z").getTime() - IST_OFFSET_MS;
+      const todayEnd = new Date(today + "T23:59:59.999Z").getTime() - IST_OFFSET_MS;
+      q.set("from", String(todayStart));
+      q.set("to", String(todayEnd));
+    } else if (period === "last6months") {
+      q.set("days", "180");
     } else if (period !== "recent") {
       const r = yearRange(period);
       q.set("from", String(r.from));
@@ -201,11 +286,13 @@ export default function Backtest() {
     }
     return "/api/backtest/export?" + q.toString();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pairSel, monthSel, period, exclActive, exclFrom, exclTo]);
+  }, [pairSel, monthSel, daySel, period, exclActive, exclFrom, exclTo]);
 
   const reset = () => {
     setPairSel([]);
     setMonthSel(null);
+    setDaySel(null);
+    setShowCalendar(false);
   };
 
   return (
@@ -248,6 +335,28 @@ export default function Backtest() {
       <div className="mt-5 flex flex-wrap items-center gap-2">
         <span className="text-[10px] uppercase tracking-wide text-muted mr-1">Period</span>
         <button
+          onClick={() => pickPeriod("today")}
+          disabled={loading}
+          className={`text-xs px-3 py-1.5 rounded-md border transition disabled:opacity-50 ${
+            period === "today"
+              ? "border-accent bg-accent/15 text-accent font-medium"
+              : "border-border bg-panel2 text-muted hover:border-accent/40"
+          }`}
+        >
+          Today
+        </button>
+        <button
+          onClick={() => pickPeriod("last6months")}
+          disabled={loading}
+          className={`text-xs px-3 py-1.5 rounded-md border transition disabled:opacity-50 ${
+            period === "last6months"
+              ? "border-accent bg-accent/15 text-accent font-medium"
+              : "border-border bg-panel2 text-muted hover:border-accent/40"
+          }`}
+        >
+          Last 6 months
+        </button>
+        <button
           onClick={() => pickPeriod("recent")}
           disabled={loading}
           className={`text-xs px-3 py-1.5 rounded-md border transition disabled:opacity-50 ${
@@ -256,7 +365,7 @@ export default function Backtest() {
               : "border-border bg-panel2 text-muted hover:border-accent/40"
           }`}
         >
-          Last 6 months
+          Recent
         </button>
         {YEARS.map((y) => (
           <button
@@ -293,7 +402,7 @@ export default function Backtest() {
               {p}
             </button>
           ))}
-          {(pairSel.length > 0 || monthSel) && (
+          {(pairSel.length > 0 || monthSel || daySel) && (
             <button
               onClick={reset}
               className="text-xs px-3 py-1.5 rounded-md border border-border bg-panel2 text-muted hover:text-ink transition"
@@ -303,6 +412,8 @@ export default function Backtest() {
           )}
           <span className="text-[11px] text-muted ml-auto">
             {filtered.length} of {data.trades.length} trades
+            {daySel && ` · ${daySel}`}
+            {monthSel && !daySel && ` · ${monthLabel(monthSel)}`}
           </span>
         </div>
       )}
@@ -347,8 +458,18 @@ export default function Backtest() {
       {/* monthly win rate breakdown */}
       {data && months.length > 0 && (
         <div className="mt-5">
-          <div className="text-[10px] uppercase tracking-wide text-muted mb-2">
-            Win rate by month{monthSel ? " · click again to clear" : " · click a month to filter"}
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[10px] uppercase tracking-wide text-muted">
+              Win rate by month{monthSel ? " · click again to clear" : " · click a month to filter"}
+            </div>
+            {monthSel && (
+              <button
+                onClick={() => setShowCalendar(!showCalendar)}
+                className="text-xs px-3 py-1.5 rounded-md border border-border bg-panel2 text-muted hover:text-ink transition"
+              >
+                {showCalendar ? "Hide" : "Show"} Calendar
+              </button>
+            )}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {months.map((m) => {
@@ -356,7 +477,17 @@ export default function Backtest() {
               return (
                 <button
                   key={m.key}
-                  onClick={() => setMonthSel(active ? null : m.key)}
+                  onClick={() => {
+                    if (active) {
+                      setMonthSel(null);
+                      setDaySel(null);
+                      setShowCalendar(false);
+                    } else {
+                      setMonthSel(m.key);
+                      setDaySel(null);
+                      setShowCalendar(false);
+                    }
+                  }}
                   className={`text-left rounded-lg border p-3 transition ${
                     active
                       ? "border-accent bg-accent/10"
@@ -381,6 +512,21 @@ export default function Backtest() {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* daily calendar view */}
+      {monthSel && showCalendar && (
+        <div className="mt-5">
+          <div className="text-[10px] uppercase tracking-wide text-muted mb-3">
+            Daily breakdown for {monthLabel(monthSel)} · click a day to filter
+          </div>
+          <Calendar 
+            monthKey={monthSel} 
+            days={days} 
+            selectedDay={daySel}
+            onDayClick={(day) => setDaySel(daySel === day ? null : day)}
+          />
         </div>
       )}
 
@@ -470,6 +616,126 @@ function Stat({ label, value, cls }) {
     <div className="rounded-md bg-panel2 border border-border py-1.5">
       <div className={`font-bold ${cls}`}>{value}</div>
       <div className="text-[10px] text-muted">{label}</div>
+    </div>
+  );
+}
+
+function Calendar({ monthKey, days, selectedDay, onDayClick }) {
+  const [year, month] = monthKey.split("-").map(Number);
+  
+  // Get first day of the month and how many days in the month
+  const firstDay = new Date(year, month - 1, 1);
+  const lastDay = new Date(year, month, 0);
+  const daysInMonth = lastDay.getDate();
+  const startDayOfWeek = firstDay.getDay(); // 0 = Sunday
+  
+  // Create a map of day number to day data for quick lookup
+  const dayMap = {};
+  days.forEach(day => {
+    const dayNum = parseInt(day.date.split('-')[2]);
+    dayMap[dayNum] = day;
+  });
+  
+  // Generate calendar grid
+  const calendar = [];
+  let week = [];
+  
+  // Add empty cells for days before the first day of the month
+  for (let i = 0; i < startDayOfWeek; i++) {
+    week.push(null);
+  }
+  
+  // Add all days of the month
+  for (let day = 1; day <= daysInMonth; day++) {
+    week.push(day);
+    
+    // If we've filled a week (7 days) or it's the last day, add the week to calendar
+    if (week.length === 7 || day === daysInMonth) {
+      // Fill remaining cells if it's the last week and not complete
+      while (week.length < 7) {
+        week.push(null);
+      }
+      calendar.push(week);
+      week = [];
+    }
+  }
+  
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  
+  return (
+    <div className="bg-panel border border-border rounded-lg p-4">
+      {/* Month/Year header */}
+      <div className="text-center text-sm font-semibold mb-4">
+        {MONTHS[month - 1]} {year}
+      </div>
+      
+      {/* Day names header */}
+      <div className="grid grid-cols-7 gap-1 mb-2">
+        {dayNames.map((name) => (
+          <div key={name} className="text-center text-xs font-medium text-muted py-1">
+            {name}
+          </div>
+        ))}
+      </div>
+      
+      {/* Calendar grid */}
+      <div className="space-y-1">
+        {calendar.map((week, weekIndex) => (
+          <div key={weekIndex} className="grid grid-cols-7 gap-1">
+            {week.map((day, dayIndex) => {
+              if (day === null) {
+                return <div key={dayIndex} className="h-12"></div>;
+              }
+              
+              const dayData = dayMap[day];
+              const dayKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+              const isSelected = selectedDay === dayKey;
+              const hasData = dayData && dayData.signals > 0;
+              
+              return (
+                <button
+                  key={day}
+                  onClick={() => hasData && onDayClick(dayKey)}
+                  disabled={!hasData}
+                  className={`h-12 rounded-md text-xs transition relative ${
+                    !hasData
+                      ? "text-muted/40 cursor-not-allowed"
+                      : isSelected
+                      ? "bg-accent/20 border border-accent text-accent font-bold"
+                      : "bg-panel2 hover:bg-panel2/70 border border-border/50 hover:border-accent/40"
+                  }`}
+                >
+                  <div className="absolute top-1 left-1 text-[10px]">{day}</div>
+                  {hasData && (
+                    <div className="mt-2">
+                      <div className={`text-sm font-bold ${
+                        dayData.winRate >= 50 ? "text-bull" : "text-bear"
+                      }`}>
+                        {dayData.winRate}%
+                      </div>
+                      <div className="text-[9px] text-muted">
+                        {dayData.signals} sig
+                      </div>
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      
+      {/* Legend */}
+      <div className="mt-4 flex justify-center gap-4 text-xs text-muted">
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded bg-bull/20 border border-bull/40"></div>
+          <span>≥50% win rate</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded bg-bear/20 border border-bear/40"></div>
+          <span>&lt;50% win rate</span>
+        </div>
+      </div>
     </div>
   );
 }
