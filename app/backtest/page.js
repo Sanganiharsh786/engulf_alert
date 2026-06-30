@@ -116,7 +116,6 @@ export default function Backtest() {
   const [exclTo, setExclTo] = useState(""); // "HH:MM" IST — end of excluded window
   const [showCalendar, setShowCalendar] = useState(false); // toggle calendar view
   const [hoveredTrade, setHoveredTrade] = useState(null); // for chart preview
-  const [chartPosition, setChartPosition] = useState({ x: 0, y: 0 }); // tooltip position
   const toast = useToast();
 
   const toMin = (hm) => {
@@ -532,11 +531,10 @@ export default function Backtest() {
         </div>
       )}
       
-      {/* Hover Chart Tooltip */}
+      {/* Chart Modal */}
       {hoveredTrade && (
         <HoverChart 
           trade={hoveredTrade} 
-          position={chartPosition}
           onClose={() => setHoveredTrade(null)}
         />
       )}
@@ -580,8 +578,9 @@ export default function Backtest() {
 
           {/* trades table */}
           <div className="mt-6 rounded-lg border border-border bg-panel overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-border text-xs font-semibold uppercase tracking-wide text-muted">
-              Trades ({filtered.length})
+            <div className="px-4 py-2.5 border-b border-border text-xs font-semibold uppercase tracking-wide text-muted flex items-center justify-between">
+              <span>Trades ({filtered.length})</span>
+              <span className="text-accent text-[10px] normal-case">💡 Click any row to view chart</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
@@ -596,16 +595,9 @@ export default function Backtest() {
                   {filtered.map((t, i) => (
                     <tr 
                       key={i} 
-                      className="border-b border-border/50 hover:bg-panel2 cursor-pointer"
-                      onMouseEnter={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        setChartPosition({ 
-                          x: rect.left + rect.width + 10, 
-                          y: rect.top 
-                        });
-                        setHoveredTrade(t);
-                      }}
-                      onMouseLeave={() => setHoveredTrade(null)}
+                      className="border-b border-border/50 hover:bg-panel2 cursor-pointer transition-colors"
+                      onClick={() => setHoveredTrade(t)}
+                      title="Click to view chart"
                     >
                       <td className="px-3 py-1.5 whitespace-nowrap">{t.time}</td>
                       <td className="px-3 py-1.5">{t.day}</td>
@@ -763,10 +755,22 @@ function Calendar({ monthKey, days, selectedDay, onDayClick }) {
   );
 }
 
-function HoverChart({ trade, position, onClose }) {
+function HoverChart({ trade, onClose }) {
   const [chartSVG, setChartSVG] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // Handle escape key to close modal
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
 
   useEffect(() => {
     let mounted = true;
@@ -820,83 +824,126 @@ function HoverChart({ trade, position, onClose }) {
     };
   }, [trade]);
 
-  // Position the tooltip - make sure it doesn't go off screen
-  const maxX = typeof window !== 'undefined' ? window.innerWidth - 420 : 1000; // chart width
-  const maxY = typeof window !== 'undefined' ? window.innerHeight - 320 : 600; // chart height
-  const x = Math.max(10, Math.min(position.x, maxX));
-  const y = Math.max(10, Math.min(position.y, maxY));
-
   return (
-    <div
-      className="fixed z-50 bg-panel border-2 border-accent/60 rounded-lg shadow-2xl"
-      style={{
-        left: `${x}px`,
-        top: `${y}px`,
-        width: typeof window !== 'undefined' && window.innerWidth < 600 ? "300px" : "400px",
-        maxHeight: "300px"
-      }}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b border-border">
-        <div className="text-sm font-semibold">
-          {trade.pair} · {trade.time} · {trade.direction?.toUpperCase()} ENGULF
-        </div>
-        <button
-          onClick={onClose}
-          className="text-muted hover:text-ink transition text-lg leading-none"
-        >
-          ×
-        </button>
-      </div>
+    <>
+      {/* Backdrop */}
+      <div 
+        className="fixed inset-0 bg-black/50 z-40"
+        onClick={onClose}
+      />
       
-      {/* Chart Content */}
-      <div className="p-2">
-        {loading && (
-          <div className="flex items-center justify-center h-48 text-muted text-sm">
-            Loading chart...
+      {/* Modal */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="bg-panel border-2 border-accent/60 rounded-lg shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-border bg-panel2/50">
+            <div>
+              <h3 className="text-lg font-bold">
+                {trade.pair} · {trade.direction?.toUpperCase()} ENGULFING PATTERN
+              </h3>
+              <p className="text-sm text-muted mt-1">
+                {trade.time} · Level: {trade.level} · Outcome: {" "}
+                <span className={`font-bold ${
+                  trade.outcome === "win" ? "text-bull" : 
+                  trade.outcome === "loss" ? "text-bear" : "text-muted"
+                }`}>
+                  {trade.outcome.toUpperCase()}
+                </span>
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-muted hover:text-ink transition text-xl leading-none px-2 py-1 hover:bg-border/30 rounded"
+            >
+              ×
+            </button>
           </div>
-        )}
-        
-        {error && (
-          <div className="flex items-center justify-center h-48 text-bear text-sm">
-            Error: {error}
+          
+          {/* Chart Content */}
+          <div className="p-4">
+            {loading && (
+              <div className="flex items-center justify-center h-96 text-muted">
+                <div className="text-center">
+                  <div className="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full mx-auto mb-3"></div>
+                  <div>Loading chart data...</div>
+                </div>
+              </div>
+            )}
+            
+            {error && (
+              <div className="flex items-center justify-center h-96 text-bear text-center">
+                <div>
+                  <div className="text-lg mb-2">⚠️ Chart Error</div>
+                  <div className="text-sm">{error}</div>
+                </div>
+              </div>
+            )}
+            
+            {chartSVG && !loading && !error && (
+              <div className="w-full h-[500px] bg-[#0e1422] rounded-lg overflow-hidden">
+                <div 
+                  className="w-full h-full"
+                  dangerouslySetInnerHTML={{ __html: chartSVG }}
+                />
+              </div>
+            )}
           </div>
-        )}
-        
-        {chartSVG && !loading && !error && (
-          <div 
-            className="w-full h-48"
-            dangerouslySetInnerHTML={{ __html: chartSVG }}
-          />
-        )}
-      </div>
-      
-      {/* Trade Details Footer */}
-      <div className="p-3 border-t border-border bg-panel2/50 text-xs font-mono">
-        <div className="grid grid-cols-4 gap-2 text-center">
-          <div>
-            <div className="text-muted">Entry</div>
-            <div className="text-accent font-bold">{fmt(trade.entry)}</div>
-          </div>
-          <div>
-            <div className="text-muted">Stop</div>
-            <div className="text-bear font-bold">{fmt(trade.stop)}</div>
-          </div>
-          <div>
-            <div className="text-muted">TP</div>
-            <div className="text-bull font-bold">{fmt(trade.tp)}</div>
-          </div>
-          <div>
-            <div className="text-muted">Outcome</div>
-            <div className={`font-bold ${
-              trade.outcome === "win" ? "text-bull" : 
-              trade.outcome === "loss" ? "text-bear" : "text-muted"
-            }`}>
-              {trade.outcome.toUpperCase()}
+          
+          {/* Trade Details Footer */}
+          <div className="border-t border-border bg-panel2/30">
+            <div className="p-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div className="text-center">
+                  <div className="text-xs text-muted mb-1">ENTRY PRICE</div>
+                  <div className="text-lg font-bold text-accent">{fmt(trade.entry)}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-muted mb-1">STOP LOSS</div>
+                  <div className="text-lg font-bold text-bear">{fmt(trade.stop)}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-muted mb-1">TAKE PROFIT</div>
+                  <div className="text-lg font-bold text-bull">{fmt(trade.tp)}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-muted mb-1">RISK/REWARD</div>
+                  <div className="text-lg font-bold">{trade.r > 0 ? `+${trade.r}R` : `${trade.r}R`}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-muted mb-1">BARS HELD</div>
+                  <div className="text-lg font-bold">{trade.barsHeld || "—"}</div>
+                </div>
+              </div>
+              
+              {/* Legend */}
+              <div className="mt-4 pt-4 border-t border-border/50">
+                <div className="flex flex-wrap justify-center gap-6 text-xs">
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-0.5 bg-white" style={{borderTop: "2px dashed white"}}></div>
+                    <span className="text-muted">Entry Price</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-0.5 bg-bear" style={{borderTop: "2px dashed #ef5350"}}></div>
+                    <span className="text-muted">Stop Loss</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-0.5 bg-bull" style={{borderTop: "2px dashed #26a69a"}}></div>
+                    <span className="text-muted">Take Profit</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-3 bg-blue-500/20 border border-blue-500 rounded-sm"></div>
+                    <span className="text-muted">Engulfing Signal</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-3 bg-gold/20 border-t-2 border-gold"></div>
+                    <span className="text-muted">Support/Resistance Level</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
