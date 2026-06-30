@@ -55,7 +55,7 @@ export async function POST(req) {
     }
     
     const windowData = chartData.slice(windowStart, windowEnd);
-    
+
     // Generate the SVG chart with trade details
     const svg = buildChartSVG({
       pair,
@@ -70,7 +70,15 @@ export async function POST(req) {
       levelHigh: levelHigh !== undefined ? parseFloat(levelHigh) : null,
     });
 
-    return NextResponse.json({ svg });
+    // Also return raw OHLCV rows so the interactive (lightweight-charts) view
+    // can render the same candles + overlays without a second fetch.
+    return NextResponse.json({
+      svg,
+      rows: windowData,
+      tf,
+      signalTs,
+      pairName: pair.name,
+    });
   } catch (e) {
     console.error("Trade chart error:", e);
     return NextResponse.json({ error: String(e.message || e) }, { status: 500 });
