@@ -748,8 +748,73 @@ function Calendar({ monthKey, days, selectedDay, onDayClick }) {
 
 /* ---------- TradingView-style Chart (lightweight-charts) ---------- */
 // Uses TradingView's free open-source lightweight-charts library so we can
-// overlay Entry / Stop / Take-Profit price lines, the level zone, and a marker
+// overlay Entry / Stop / Take-Profit zones, the level band, and a marker
 // on the engulfing candle — same details the SVG chart already shows.
+
+// Custom drawing primitive: filled rectangle between two (time, price) corners.
+// Used to render the SL (red) and TP (green) zones starting at the signal candle.
+function positionsBox(p1, p2, ratio) {
+  const min = Math.min(p1, p2);
+  const max = Math.max(p1, p2);
+  return {
+    position: Math.round(min * ratio),
+    length: Math.max(1, Math.round((max - min) * ratio)),
+  };
+}
+
+function makeZonePrimitive(startTime, endTime, priceA, priceB, fillColor, borderColor) {
+  return {
+    _chart: null,
+    _series: null,
+    _p1: { x: null, y: null },
+    _p2: { x: null, y: null },
+    attached({ chart, series }) {
+      this._chart = chart;
+      this._series = series;
+    },
+    detached() {},
+    updateAllViews() {
+      if (!this._chart || !this._series) return;
+      const ts = this._chart.timeScale();
+      this._p1 = {
+        x: ts.timeToCoordinate(startTime),
+        y: this._series.priceToCoordinate(priceA),
+      };
+      this._p2 = {
+        x: ts.timeToCoordinate(endTime),
+        y: this._series.priceToCoordinate(priceB),
+      };
+    },
+    paneViews() {
+      const p1 = this._p1;
+      const p2 = this._p2;
+      return [
+        {
+          renderer: () => ({
+            draw(target) {
+              target.useBitmapCoordinateSpace((scope) => {
+                if (
+                  p1.x == null || p1.y == null ||
+                  p2.x == null || p2.y == null
+                ) return;
+                const hbox = positionsBox(p1.x, p2.x, scope.horizontalPixelRatio);
+                const vbox = positionsBox(p1.y, p2.y, scope.verticalPixelRatio);
+                const ctx = scope.context;
+                ctx.fillStyle = fillColor;
+                ctx.fillRect(hbox.position, vbox.position, hbox.length, vbox.length);
+                if (borderColor) {
+                  ctx.strokeStyle = borderColor;
+                  ctx.lineWidth = Math.max(1, scope.verticalPixelRatio);
+                  ctx.strokeRect(hbox.position, vbox.position, hbox.length, vbox.length);
+                }
+              });
+            },
+          }),
+        },
+      ];
+    },
+  };
+}
 
 function TradingViewChart({ trade, rows, signalTs }) {
   const containerRef = useRef(null);
@@ -844,7 +909,7 @@ function TradingViewChart({ trade, rows, signalTs }) {
           candleSeries.createPriceLine({
             price: Number(trade.entry),
             color: "#ffffff",
-            lineWidth: 2,
+            lineWidth: 1,
             lineStyle: dashed,
             axisLabelVisible: true,
             title: "ENTRY",
@@ -855,7 +920,7 @@ function TradingViewChart({ trade, rows, signalTs }) {
             price: Number(trade.stop),
             color: "#ef5350",
             lineWidth: 2,
-            lineStyle: dashed,
+            lineStyle: lwc.LineStyle.Solid,
             axisLabelVisible: true,
             title: "SL",
           });
@@ -865,10 +930,40 @@ function TradingViewChart({ trade, rows, signalTs }) {
             price: Number(trade.tp),
             color: "#26a69a",
             lineWidth: 2,
-            lineStyle: dashed,
+            lineStyle: lwc.LineStyle.Solid,
             axisLabelVisible: true,
             title: "TP",
           });
+        }
+
+        // SL / TP filled risk-reward zones (start at signal candle, extend to last bar)
+        const sigSec = Math.floor(Number(signalTs ?? trade.ts) / 1000);
+        const lastSec = Math.floor(rows[rows.length - 1][0] / 1000);
+        if (sigSec && lastSec > sigSec && trade.entry != null) {
+          if (trade.tp != null) {
+            candleSeries.attachPrimitive(
+              makeZonePrimitive(
+                sigSec,
+                lastSec,
+                Number(trade.entry),
+                Number(trade.tp),
+                "rgba(38, 166, 154, 0.22)", // green fill
+                "rgba(38, 166, 154, 0.55)"  // green border
+              )
+            );
+          }
+          if (trade.stop != null) {
+            candleSeries.attachPrimitive(
+              makeZonePrimitive(
+                sigSec,
+                lastSec,
+                Number(trade.entry),
+                Number(trade.stop),
+                "rgba(239, 83, 80, 0.22)",  // red fill
+                "rgba(239, 83, 80, 0.55)"   // red border
+              )
+            );
+          }
         }
         if (levelLow != null && levelHigh != null) {
           candleSeries.createPriceLine({
