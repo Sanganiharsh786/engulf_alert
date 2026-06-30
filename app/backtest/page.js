@@ -755,19 +755,149 @@ const TF_MAP = {
   "1d": "D", "1w": "W", "1M": "M",
 };
 
-function TradingViewChart({ symbol, interval, tradeTs, entry, stop, tp, direction, theme = "dark" }) {
+// Preload the TradingView script once at module level so it's ready instantly
+let tvScriptLoaded = false;
+let tvScriptPromise = null;
+function loadTvScript() {
+  if (tvScriptLoaded) return Promise.resolve();
+  if (typeof window !== "undefined" && window.TradingView && window.TradingView.widget) {
+    tvScriptLoaded = true;
+    return Promise.resolve();
+  }
+  if (tvScriptPromise) return tvScriptPromise;
+  tvScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.id = "tv-chart-script";
+    script.src = "https://s3.tradingview.com/tv.js";
+    script.async = true;
+    script.onload = () => { tvScriptLoaded = true; resolve(); };
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+  return tvScriptPromise;
+}
+// Start loading immediately
+if (typeof window !== "undefined") loadTvScript().catch(() => {});
+
+function TradingViewChart({ symbol, interval, tradeTs, entry, stop, tp, direction, theme = "dark", levelLow, levelHigh }) {
   const containerRef = useRef(null);
   const widgetRef = useRef(null);
+  const [tvReady, setTvReady] = useState(false);
+  const [tvError, setTvError] = useState("");
+  const containerIdRef = useRef(`tv-chart-${Math.random().toString(36).slice(2, 9)}`);
 
   useEffect(() => {
-    const containerId = `tv-chart-${Math.random().toString(36).slice(2, 9)}`;
+    const containerId = containerIdRef.current;
     if (containerRef.current) {
       containerRef.current.id = containerId;
     }
 
     let mounted = true;
+    let retryCount = 0;
+    const MAX_RETRIES = 5;
 
-    const initWidget = () => {
+    const doSetupChart = (chart, tsSec, fromSec, toSec) => {
+      // 1. Set visible range — retry if data not loaded yet
+      const trySetRange = () => {
+        try {
+          chart.setVisibleRange({ from: fromSec, to: toSec });
+          return true;
+        } catch (e) {
+          return false;
+        }
+      };
+
+      if (!trySetRange() && retryCount < MAX_RETRIES) {
+        retryCount++;
+        setTimeout(trySetRange, 400 * retryCount);
+      }
+
+      // 2. Draw Entry / Stop / TP lines
+      const addTradeLine = (price, color, label) => {
+        if (price == null || isNaN(Number(price))) return;
+        try {
+          chart.createShape(
+            { time: tsSec, price: Number(price) },
+            {
+              shape: "horizontal_line",
+              lock: true,
+              disableSave: true,
+              text: label,
+              overrides: {
+                linecolor: color,
+                linestyle: 2,
+                linewidth: 2,
+              },
+            }
+          );
+        } catch (e) {
+          // silent
+        }
+      };
+
+      addTradeLine(entry, "#ffffff", "ENTRY");
+      addTradeLine(stop,  "#ef5350", "STOP LOSS");
+      addTradeLine(tp,    "#26a69a", "TAKE PROFIT");
+
+      // 3. Level zone boundaries as default Horizontal Line studies
+      if (levelLow != null && levelHigh != null && !isNaN(levelLow) && !isNaN(levelHigh)) {
+        try {
+          const lo = Math.min(Number(levelLow), Number(levelHigh));
+          const hi = Math.max(Number(levelLow), Number(levelHigh));
+          chart.createStudy("Horizontal Line", false, false, [lo]);
+          chart.createStudy("Horizontal Line", false, false, [hi]);
+        } catch (e) { /* silent */ }
+      }
+
+      // 4. Direction arrow + \"ENGULF\" label at the signal candle
+      try {
+        const isBull = direction === "bullish";
+        chart.createShape(
+          { time: tsSec },
+          {
+            shape: isBull ? "arrow_up" : "arrow_down",
+            lock: true,
+            disableSave: true,
+            text: isBull ? " BULL ENGULF" : " BEAR ENGULF",
+            overrides: {
+              color: isBull ? "#26a69a" : "#ef5350",
+              textcolor: "#ffffff",
+              fontSize: 12,
+            },
+          }
+        );
+      } catch (e) { /* silent */ }
+
+      // 5. Place a vertical line marker at the signal time for extra visibility
+      try {
+        chart.createShape(
+          { time: tsSec },
+          {
+            shape: "vertical_line",
+            lock: true,
+            disableSave: true,
+            text: " SIGNAL",
+            overrides: {
+              linecolor: "#3b82f6",
+              linestyle: 2,
+              linewidth: 1,
+            },
+          }
+        );
+      } catch (e) { /* silent */ }
+    };
+
+    const initWidget = async () => {
+      if (!mounted || !containerRef.current) return;
+
+      // Ensure TV script is loaded
+      try {
+        await loadTvScript();
+      } catch (e) {
+        if (mounted) setTvError("Failed to load TradingView");
+        return;
+      }
+
       if (!mounted || !containerRef.current) return;
 
       const tvInterval = TF_MAP[interval] || "15";
@@ -785,7 +915,7 @@ function TradingViewChart({ symbol, interval, tradeTs, entry, stop, tp, directio
           locale: "en",
           toolbar_bg: "#131722",
           hide_top_toolbar: false,
-          hide_legend: false,
+          hide_legend: true,
           allow_symbol_change: false,
           save_image: false,
           enable_publishing: false,
@@ -802,135 +932,80 @@ function TradingViewChart({ symbol, interval, tradeTs, entry, stop, tp, directio
             "paneProperties.bottomMargin": 10,
           },
           disabled_features: [
-            "header_symbol_search",
-            "header_compare",
-            "header_undo_redo",
-            "popup_menu",
-            "go_to_date",
+            "header_symbol_search", "header_compare",
+            "header_undo_redo", "popup_menu", "go_to_date",
           ],
           enabled_features: [
             "hide_left_toolbar_by_default",
           ],
         });
 
-        // After the chart is ready, set the visible range around the trade
         if (widgetRef.current) {
+          if (mounted) setTvReady(true);
+
           widgetRef.current.onChartReady(() => {
             if (!mounted || !widgetRef.current) return;
-
             const chart = widgetRef.current.chart();
             if (!chart) return;
 
-            // Calculate time window: show ~40 bars around the signal
-            const tfSecondsMap = { "1": 60, "15": 900, "60": 3600, "240": 14400, "D": 86400, "W": 604800 };
+            // Calculate time window
+            const tfSecondsMap = { "1": 60, "3": 180, "5": 300, "15": 900, "30": 1800, "60": 3600, "120": 7200, "240": 14400, "D": 86400, "W": 604800 };
             const sec = tfSecondsMap[tvInterval] || 900;
             const msPerBar = sec * 1000;
-            const from = tradeTs - 25 * msPerBar;
-            const to = tradeTs + 25 * msPerBar;
+            const barsBefore = tvInterval === "D" ? 20 : tvInterval === "W" ? 12 : tvInterval >= "60" ? 30 : 25;
+            const barsAfter  = tvInterval === "D" ? 15 : tvInterval === "W" ? 8  : tvInterval >= "60" ? 25 : 25;
 
-            try {
-              chart.setVisibleRange({ from: from / 1000, to: to / 1000 });
-            } catch (e) {
-              // silent — range might not be available yet
-            }
+            const tsSec = Math.floor(tradeTs / 1000);
+            const fromSec = (tradeTs - barsBefore * msPerBar) / 1000;
+            const toSec   = (tradeTs + barsAfter  * msPerBar) / 1000;
 
-            // Add horizontal lines for Entry, Stop Loss, and Take Profit
-            setTimeout(() => {
-              if (!mounted || !chart) return;
-              try {
-                const tsSec = Math.floor(tradeTs / 1000);
-
-                // Helper to add a horizontal line shape
-                const addLine = (price, color, label) => {
-                  if (price == null) return;
-                  try {
-                    chart.createShape(
-                      { time: tsSec, price: Number(price) },
-                      {
-                        shape: "horizontal_line",
-                        lock: true,
-                        disableSave: true,
-                        text: label,
-                        overrides: {
-                          linecolor: color,
-                          linestyle: 2, // dashed
-                          linewidth: 2,
-                        },
-                      }
-                    );
-                  } catch (e) {
-                    // silent — shape may fail if price is out of visible range
-                  }
-                };
-
-                addLine(entry, "#ffffff", "ENTRY");
-                addLine(stop, "#ef5350", direction === "bullish" ? "SL" : "SL");
-                addLine(tp, "#26a69a", direction === "bullish" ? "TP" : "TP");
-
-                // Add a vertical marker at the signal candle
-                try {
-                  chart.createShape(
-                    { time: tsSec },
-                    {
-                      shape: "marker",
-                      lock: true,
-                      disableSave: true,
-                      text: direction?.toUpperCase() === "BULLISH" ? "B" : "S",
-                      overrides: {
-                        color: direction === "bullish" ? "#26a69a" : "#ef5350",
-                        textcolor: "#ffffff",
-                        fontSize: 14,
-                        shape: direction === "bullish" ? "arrow_up" : "arrow_down",
-                      },
-                    }
-                  );
-                } catch (e) {
-                  // silent
-                }
-              } catch (e) {
-                // silent
-              }
-            }, 1500);
+            doSetupChart(chart, tsSec, fromSec, toSec);
           });
         }
       } catch (e) {
-        console.warn("TradingView widget init error:", e);
+        if (mounted) {
+          setTvError(String(e.message || e));
+        }
       }
     };
 
-    // Check if TV script is already loaded, load it if not
-    if (typeof window.TradingView !== "undefined" && window.TradingView.widget) {
-      initWidget();
-    } else {
-      const script = document.createElement("script");
-      script.src = "https://s3.tradingview.com/tv.js";
-      script.async = true;
-      script.onload = initWidget;
-      script.onerror = () => {
-        console.error("Failed to load TradingView script");
-      };
-      document.head.appendChild(script);
-    }
+    initWidget();
 
     return () => {
       mounted = false;
-      // Cleanup widget
       if (widgetRef.current && typeof widgetRef.current.remove === "function") {
-        try {
-          widgetRef.current.remove();
-        } catch (e) {
-          // silent
-        }
+        try { widgetRef.current.remove(); } catch (e) { /* silent */ }
         widgetRef.current = null;
       }
     };
-  }, [symbol, interval, tradeTs, theme]);
+  }, [symbol, interval, tradeTs, entry, stop, tp, direction, levelLow, levelHigh, theme]);
+
+  if (tvError) {
+    return (
+      <div className="flex items-center justify-center h-96 text-bear text-center">
+        <div>
+          <div className="text-lg mb-2">⚠️ TradingView Error</div>
+          <div className="text-sm">{tvError}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div
-      ref={containerRef}
-      className="w-full h-full min-h-[500px] rounded-lg overflow-hidden"
-    />
+    <div className="relative w-full h-full min-h-[500px]">
+      {!tvReady && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[#0e1422] rounded-lg z-10">
+          <div className="text-center">
+            <div className="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full mx-auto mb-3"></div>
+            <div className="text-sm text-muted">Loading TradingView chart...</div>
+          </div>
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        className="w-full h-full min-h-[500px] rounded-lg overflow-hidden"
+      />
+    </div>
   );
 }
 
@@ -1088,6 +1163,8 @@ function HoverChart({ trade, onClose }) {
                     stop={trade.stop}
                     tp={trade.tp}
                     direction={trade.direction}
+                    levelLow={levelLow}
+                    levelHigh={levelHigh}
                     theme="dark"
                   />
                 </div>
