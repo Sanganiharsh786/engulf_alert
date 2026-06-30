@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "../toast";
 
 const fmt = (n) =>
@@ -96,14 +96,6 @@ function getTodayIST() {
   return istTime.toISOString().slice(0, 10); // "YYYY-MM-DD"
 }
 
-// get date 6 months ago in IST format
-function getSixMonthsAgoIST() {
-  const now = new Date();
-  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
-  const istTime = new Date(sixMonthsAgo.getTime() + IST_OFFSET_MS);
-  return istTime.toISOString().slice(0, 10); // "YYYY-MM-DD"
-}
-
 export default function Backtest() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -166,7 +158,7 @@ export default function Backtest() {
       } else {
         body = yearRange(sel);
       }
-      
+
       const res = await fetch("/api/backtest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -183,7 +175,7 @@ export default function Backtest() {
       } else {
         setData(json);
         if (notify) {
-          let periodLabel = sel === "recent" ? "last 6 months" : 
+          let periodLabel = sel === "recent" ? "last 6 months" :
                            sel === "today" ? "today" :
                            sel === "last6months" ? "last 6 months" : sel;
           toast(
@@ -228,7 +220,7 @@ export default function Backtest() {
   }, [data, pairSel, exclActive, exclFrom, exclTo]);
 
   const months = useMemo(() => summarizeByMonth(pairFiltered), [pairFiltered]);
-  
+
   // daily breakdown for calendar view (only when a month is selected)
   const days = useMemo(() => {
     if (!monthSel) return [];
@@ -257,7 +249,6 @@ export default function Backtest() {
     const q = new URLSearchParams();
     if (pairSel.length) q.set("pairs", pairSel.join(","));
     if (daySel) {
-      // Single day export
       const dayStart = new Date(daySel + "T00:00:00.000Z").getTime() - IST_OFFSET_MS;
       const dayEnd = new Date(daySel + "T23:59:59.999Z").getTime() - IST_OFFSET_MS;
       q.set("from", String(dayStart));
@@ -522,19 +513,19 @@ export default function Backtest() {
           <div className="text-[10px] uppercase tracking-wide text-muted mb-3">
             Daily breakdown for {monthLabel(monthSel)} · click a day to filter
           </div>
-          <Calendar 
-            monthKey={monthSel} 
-            days={days} 
+          <Calendar
+            monthKey={monthSel}
+            days={days}
             selectedDay={daySel}
             onDayClick={(day) => setDaySel(daySel === day ? null : day)}
           />
         </div>
       )}
-      
+
       {/* Chart Modal */}
       {hoveredTrade && (
-        <HoverChart 
-          trade={hoveredTrade} 
+        <HoverChart
+          trade={hoveredTrade}
           onClose={() => setHoveredTrade(null)}
         />
       )}
@@ -593,8 +584,8 @@ export default function Backtest() {
                 </thead>
                 <tbody className="font-mono tnum">
                   {filtered.map((t, i) => (
-                    <tr 
-                      key={i} 
+                    <tr
+                      key={i}
                       className="border-b border-border/50 hover:bg-panel2 cursor-pointer transition-colors"
                       onClick={() => setHoveredTrade(t)}
                       title="Click to view chart"
@@ -637,33 +628,33 @@ function Stat({ label, value, cls }) {
 
 function Calendar({ monthKey, days, selectedDay, onDayClick }) {
   const [year, month] = monthKey.split("-").map(Number);
-  
+
   // Get first day of the month and how many days in the month
   const firstDay = new Date(year, month - 1, 1);
   const lastDay = new Date(year, month, 0);
   const daysInMonth = lastDay.getDate();
   const startDayOfWeek = firstDay.getDay(); // 0 = Sunday
-  
+
   // Create a map of day number to day data for quick lookup
   const dayMap = {};
   days.forEach(day => {
     const dayNum = parseInt(day.date.split('-')[2]);
     dayMap[dayNum] = day;
   });
-  
+
   // Generate calendar grid
   const calendar = [];
   let week = [];
-  
+
   // Add empty cells for days before the first day of the month
   for (let i = 0; i < startDayOfWeek; i++) {
     week.push(null);
   }
-  
+
   // Add all days of the month
   for (let day = 1; day <= daysInMonth; day++) {
     week.push(day);
-    
+
     // If we've filled a week (7 days) or it's the last day, add the week to calendar
     if (week.length === 7 || day === daysInMonth) {
       // Fill remaining cells if it's the last week and not complete
@@ -674,16 +665,16 @@ function Calendar({ monthKey, days, selectedDay, onDayClick }) {
       week = [];
     }
   }
-  
+
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  
+
   return (
     <div className="bg-panel border border-border rounded-lg p-4">
       {/* Month/Year header */}
       <div className="text-center text-sm font-semibold mb-4">
         {MONTHS[month - 1]} {year}
       </div>
-      
+
       {/* Day names header */}
       <div className="grid grid-cols-7 gap-1 mb-2">
         {dayNames.map((name) => (
@@ -692,7 +683,7 @@ function Calendar({ monthKey, days, selectedDay, onDayClick }) {
           </div>
         ))}
       </div>
-      
+
       {/* Calendar grid */}
       <div className="space-y-1">
         {calendar.map((week, weekIndex) => (
@@ -701,12 +692,12 @@ function Calendar({ monthKey, days, selectedDay, onDayClick }) {
               if (day === null) {
                 return <div key={dayIndex} className="h-12"></div>;
               }
-              
+
               const dayData = dayMap[day];
               const dayKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
               const isSelected = selectedDay === dayKey;
               const hasData = dayData && dayData.signals > 0;
-              
+
               return (
                 <button
                   key={day}
@@ -739,7 +730,7 @@ function Calendar({ monthKey, days, selectedDay, onDayClick }) {
           </div>
         ))}
       </div>
-      
+
       {/* Legend */}
       <div className="mt-4 flex justify-center gap-4 text-xs text-muted">
         <div className="flex items-center gap-1">
@@ -755,10 +746,207 @@ function Calendar({ monthKey, days, selectedDay, onDayClick }) {
   );
 }
 
+/* ---------- TradingView Chart Component ---------- */
+
+// Map app timeframe format to TradingView's interval format
+const TF_MAP = {
+  "1m": "1", "3m": "3", "5m": "5", "15m": "15", "30m": "30",
+  "1h": "60", "2h": "120", "4h": "240",
+  "1d": "D", "1w": "W", "1M": "M",
+};
+
+function TradingViewChart({ symbol, interval, tradeTs, entry, stop, tp, direction, theme = "dark" }) {
+  const containerRef = useRef(null);
+  const widgetRef = useRef(null);
+
+  useEffect(() => {
+    const containerId = `tv-chart-${Math.random().toString(36).slice(2, 9)}`;
+    if (containerRef.current) {
+      containerRef.current.id = containerId;
+    }
+
+    let mounted = true;
+
+    const initWidget = () => {
+      if (!mounted || !containerRef.current) return;
+
+      const tvInterval = TF_MAP[interval] || "15";
+
+      try {
+        widgetRef.current = new window.TradingView.widget({
+          container_id: containerId,
+          width: "100%",
+          height: "100%",
+          symbol: symbol,
+          interval: tvInterval,
+          timezone: "Asia/Kolkata",
+          theme: theme,
+          style: "1",
+          locale: "en",
+          toolbar_bg: "#131722",
+          hide_top_toolbar: false,
+          hide_legend: false,
+          allow_symbol_change: false,
+          save_image: false,
+          enable_publishing: false,
+          hideideasbutton: true,
+          withdateranges: true,
+          studies: [],
+          loading_screen: { backgroundColor: "#0e1422" },
+          overrides: {
+            "paneProperties.background": "#0e1422",
+            "paneProperties.vertGridProperties.color": "#1e2840",
+            "paneProperties.horzGridProperties.color": "#1e2840",
+            "paneProperties.crossHairProperties.color": "#3b82f6",
+            "paneProperties.topMargin": 15,
+            "paneProperties.bottomMargin": 10,
+          },
+          disabled_features: [
+            "header_symbol_search",
+            "header_compare",
+            "header_undo_redo",
+            "popup_menu",
+            "go_to_date",
+          ],
+          enabled_features: [
+            "hide_left_toolbar_by_default",
+          ],
+        });
+
+        // After the chart is ready, set the visible range around the trade
+        if (widgetRef.current) {
+          widgetRef.current.onChartReady(() => {
+            if (!mounted || !widgetRef.current) return;
+
+            const chart = widgetRef.current.chart();
+            if (!chart) return;
+
+            // Calculate time window: show ~40 bars around the signal
+            const tfSecondsMap = { "1": 60, "15": 900, "60": 3600, "240": 14400, "D": 86400, "W": 604800 };
+            const sec = tfSecondsMap[tvInterval] || 900;
+            const msPerBar = sec * 1000;
+            const from = tradeTs - 25 * msPerBar;
+            const to = tradeTs + 25 * msPerBar;
+
+            try {
+              chart.setVisibleRange({ from: from / 1000, to: to / 1000 });
+            } catch (e) {
+              // silent — range might not be available yet
+            }
+
+            // Add horizontal lines for Entry, Stop Loss, and Take Profit
+            setTimeout(() => {
+              if (!mounted || !chart) return;
+              try {
+                const tsSec = Math.floor(tradeTs / 1000);
+
+                // Helper to add a horizontal line shape
+                const addLine = (price, color, label) => {
+                  if (price == null) return;
+                  try {
+                    chart.createShape(
+                      { time: tsSec, price: Number(price) },
+                      {
+                        shape: "horizontal_line",
+                        lock: true,
+                        disableSave: true,
+                        text: label,
+                        overrides: {
+                          linecolor: color,
+                          linestyle: 2, // dashed
+                          linewidth: 2,
+                        },
+                      }
+                    );
+                  } catch (e) {
+                    // silent — shape may fail if price is out of visible range
+                  }
+                };
+
+                addLine(entry, "#ffffff", "ENTRY");
+                addLine(stop, "#ef5350", direction === "bullish" ? "SL" : "SL");
+                addLine(tp, "#26a69a", direction === "bullish" ? "TP" : "TP");
+
+                // Add a vertical marker at the signal candle
+                try {
+                  chart.createShape(
+                    { time: tsSec },
+                    {
+                      shape: "marker",
+                      lock: true,
+                      disableSave: true,
+                      text: direction?.toUpperCase() === "BULLISH" ? "B" : "S",
+                      overrides: {
+                        color: direction === "bullish" ? "#26a69a" : "#ef5350",
+                        textcolor: "#ffffff",
+                        fontSize: 14,
+                        shape: direction === "bullish" ? "arrow_up" : "arrow_down",
+                      },
+                    }
+                  );
+                } catch (e) {
+                  // silent
+                }
+              } catch (e) {
+                // silent
+              }
+            }, 1500);
+          });
+        }
+      } catch (e) {
+        console.warn("TradingView widget init error:", e);
+      }
+    };
+
+    // Check if TV script is already loaded, load it if not
+    if (typeof window.TradingView !== "undefined" && window.TradingView.widget) {
+      initWidget();
+    } else {
+      const script = document.createElement("script");
+      script.src = "https://s3.tradingview.com/tv.js";
+      script.async = true;
+      script.onload = initWidget;
+      script.onerror = () => {
+        console.error("Failed to load TradingView script");
+      };
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      mounted = false;
+      // Cleanup widget
+      if (widgetRef.current && typeof widgetRef.current.remove === "function") {
+        try {
+          widgetRef.current.remove();
+        } catch (e) {
+          // silent
+        }
+        widgetRef.current = null;
+      }
+    };
+  }, [symbol, interval, tradeTs, theme]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="w-full h-full min-h-[500px] rounded-lg overflow-hidden"
+    />
+  );
+}
+
+/* ---------- HoverChart Modal ---------- */
+
 function HoverChart({ trade, onClose }) {
+  const [viewMode, setViewMode] = useState("tradingview"); // "tradingview" | "svg"
   const [chartSVG, setChartSVG] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [svgLoading, setSvgLoading] = useState(false);
+  const [svgError, setSvgError] = useState("");
+
+  // Derive the TradingView symbol from the trade data
+  const tvSymbol = trade.tvSymbol ||
+    (trade.tradingview ? trade.tradingview : (trade.exchange ? `${trade.exchange.toUpperCase()}:${trade.pair}` : ""));
+
+  const tvInterval = trade.tf || "15m";
 
   // Handle escape key to close modal
   useEffect(() => {
@@ -767,98 +955,91 @@ function HoverChart({ trade, onClose }) {
         onClose();
       }
     };
-
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
   }, [onClose]);
 
-  useEffect(() => {
-    let mounted = true;
-    
-    const fetchChart = async () => {
-      try {
-        setLoading(true);
-        setError("");
-        
-        // Parse level string like "62842.5-63104.4" into low/high values
-        let levelLow, levelHigh;
-        if (trade.level && typeof trade.level === 'string' && trade.level.includes('-')) {
-          const parts = trade.level.split('-');
-          levelLow = parseFloat(parts[0]);
-          levelHigh = parseFloat(parts[1]);
-        }
+  // Parse level string like "62842.5-63104.4" into low/high values
+  let levelLow, levelHigh;
+  if (trade.level && typeof trade.level === 'string' && trade.level.includes('-')) {
+    const parts = trade.level.split('-');
+    levelLow = parseFloat(parts[0]);
+    levelHigh = parseFloat(parts[1]);
+  }
 
-        const response = await fetch("/api/trade-chart", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            pairName: trade.pair,
-            timestamp: trade.ts,
-            entry: trade.entry,
-            stop: trade.stop,
-            tp: trade.tp,
-            direction: trade.direction,
-            levelLow,
-            levelHigh,
-          }),
-        });
-        
-        if (!mounted) return;
-        
-        if (response.status === 401) {
-          window.location.href = "/login";
-          return;
-        }
-        
-        const data = await response.json();
-        if (data.error) {
-          setError(data.error);
-        } else {
-          setChartSVG(data.svg);
-        }
-      } catch (e) {
-        if (mounted) {
-          setError(String(e.message || e));
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+  // Fetch SVG chart on demand (second tab)
+  const fetchSvg = async () => {
+    if (chartSVG || svgLoading) return;
+    setSvgLoading(true);
+    setSvgError("");
+    try {
+      const response = await fetch("/api/trade-chart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pairName: trade.pair,
+          timestamp: trade.ts,
+          entry: trade.entry,
+          stop: trade.stop,
+          tp: trade.tp,
+          direction: trade.direction,
+          levelLow,
+          levelHigh,
+        }),
+      });
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return;
       }
-    };
+      const data = await response.json();
+      if (data.error) {
+        setSvgError(data.error);
+      } else {
+        setChartSVG(data.svg);
+      }
+    } catch (e) {
+      setSvgError(String(e.message || e));
+    } finally {
+      setSvgLoading(false);
+    }
+  };
 
-    fetchChart();
-    
-    return () => {
-      mounted = false;
-    };
-  }, [trade]);
+  // Pre-fetch SVG when switching to SVG tab
+  const switchToSvg = () => {
+    setViewMode("svg");
+    fetchSvg();
+  };
 
   return (
     <>
       {/* Backdrop */}
-      <div 
+      <div
         className="fixed inset-0 bg-black/50 z-40"
         onClick={onClose}
       />
-      
+
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-panel border-2 border-accent/60 rounded-lg shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden">
+        <div className="bg-panel border-2 border-accent/60 rounded-lg shadow-2xl w-full max-w-7xl max-h-[95vh] overflow-hidden flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-border bg-panel2/50">
+          <div className="flex items-center justify-between p-4 border-b border-border bg-panel2/50 shrink-0">
             <div>
               <h3 className="text-lg font-bold">
                 {trade.pair} · {trade.direction?.toUpperCase()} ENGULFING PATTERN
               </h3>
               <p className="text-sm text-muted mt-1">
-                {trade.time} · Level: {trade.level} · Outcome: {" "}
+                {trade.time} · Level: {trade.level} · Outcome:{" "}
                 <span className={`font-bold ${
-                  trade.outcome === "win" ? "text-bull" : 
+                  trade.outcome === "win" ? "text-bull" :
                   trade.outcome === "loss" ? "text-bear" : "text-muted"
                 }`}>
                   {trade.outcome.toUpperCase()}
                 </span>
+                {tvSymbol && (
+                  <span className="ml-3 text-accent text-xs">
+                    · TV: <span className="font-mono">{tvSymbol}</span>
+                  </span>
+                )}
               </p>
             </div>
             <button
@@ -868,39 +1049,88 @@ function HoverChart({ trade, onClose }) {
               ×
             </button>
           </div>
-          
+
+          {/* Tab Switcher */}
+          <div className="flex items-center gap-1 px-4 pt-3 pb-0 shrink-0">
+            <button
+              onClick={() => setViewMode("tradingview")}
+              className={`text-xs px-3 py-1.5 rounded-t-md border border-b-0 transition ${
+                viewMode === "tradingview"
+                  ? "bg-panel border-accent/40 text-accent font-medium"
+                  : "bg-panel2/50 border-border text-muted hover:text-ink"
+              }`}
+            >
+              📈 TradingView Chart
+            </button>
+            <button
+              onClick={switchToSvg}
+              className={`text-xs px-3 py-1.5 rounded-t-md border border-b-0 transition ${
+                viewMode === "svg"
+                  ? "bg-panel border-accent/40 text-accent font-medium"
+                  : "bg-panel2/50 border-border text-muted hover:text-ink"
+              }`}
+            >
+              📊 SVG Chart
+            </button>
+            <div className="flex-1 border-b border-border"></div>
+          </div>
+
           {/* Chart Content */}
-          <div className="p-4">
-            {loading && (
-              <div className="flex items-center justify-center h-96 text-muted">
-                <div className="text-center">
-                  <div className="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full mx-auto mb-3"></div>
-                  <div>Loading chart data...</div>
+          <div className="flex-1 min-h-0 p-4">
+            {viewMode === "tradingview" && (
+              tvSymbol ? (
+                <div className="w-full h-full min-h-[450px] rounded-lg overflow-hidden border border-border">
+                  <TradingViewChart
+                    symbol={tvSymbol}
+                    interval={tvInterval}
+                    tradeTs={trade.ts}
+                    entry={trade.entry}
+                    stop={trade.stop}
+                    tp={trade.tp}
+                    direction={trade.direction}
+                    theme="dark"
+                  />
                 </div>
-              </div>
-            )}
-            
-            {error && (
-              <div className="flex items-center justify-center h-96 text-bear text-center">
-                <div>
-                  <div className="text-lg mb-2">⚠️ Chart Error</div>
-                  <div className="text-sm">{error}</div>
+              ) : (
+                <div className="flex items-center justify-center h-96 text-muted text-sm">
+                  No TradingView symbol configured for this pair.
+                  Set a "tradingview" symbol in the pair settings.
                 </div>
-              </div>
+              )
             )}
-            
-            {chartSVG && !loading && !error && (
-              <div className="w-full h-[500px] bg-[#0e1422] rounded-lg overflow-hidden">
-                <div 
-                  className="w-full h-full"
-                  dangerouslySetInnerHTML={{ __html: chartSVG }}
-                />
-              </div>
+
+            {viewMode === "svg" && (
+              svgLoading ? (
+                <div className="flex items-center justify-center h-96 text-muted">
+                  <div className="text-center">
+                    <div className="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full mx-auto mb-3"></div>
+                    <div>Loading SVG chart data...</div>
+                  </div>
+                </div>
+              ) : svgError ? (
+                <div className="flex items-center justify-center h-96 text-bear text-center">
+                  <div>
+                    <div className="text-lg mb-2">⚠️ Chart Error</div>
+                    <div className="text-sm">{svgError}</div>
+                  </div>
+                </div>
+              ) : chartSVG ? (
+                <div className="w-full h-[450px] bg-[#0e1422] rounded-lg overflow-hidden">
+                  <div
+                    className="w-full h-full"
+                    dangerouslySetInnerHTML={{ __html: chartSVG }}
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-96 text-muted text-sm">
+                  Click to load SVG chart
+                </div>
+              )
             )}
           </div>
-          
+
           {/* Trade Details Footer */}
-          <div className="border-t border-border bg-panel2/30">
+          <div className="border-t border-border bg-panel2/30 shrink-0">
             <div className="p-4">
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div className="text-center">
@@ -924,32 +1154,25 @@ function HoverChart({ trade, onClose }) {
                   <div className="text-lg font-bold">{trade.barsHeld || "—"}</div>
                 </div>
               </div>
-              
-              {/* Legend */}
-              <div className="mt-4 pt-4 border-t border-border/50">
-                <div className="flex flex-wrap justify-center gap-6 text-xs">
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-0.5 bg-white" style={{borderTop: "2px dashed white"}}></div>
-                    <span className="text-muted">Entry Price</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-0.5 bg-bear" style={{borderTop: "2px dashed #ef5350"}}></div>
-                    <span className="text-muted">Stop Loss</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-0.5 bg-bull" style={{borderTop: "2px dashed #26a69a"}}></div>
-                    <span className="text-muted">Take Profit</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-3 bg-blue-500/20 border border-blue-500 rounded-sm"></div>
-                    <span className="text-muted">Engulfing Signal</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-3 bg-gold/20 border-t-2 border-gold"></div>
-                    <span className="text-muted">Support/Resistance Level</span>
-                  </div>
+
+              {/* Open on TradingView link */}
+              {tvSymbol && (
+                <div className="mt-3 pt-3 border-t border-border/50 flex justify-center">
+                  <a
+                    href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tvSymbol)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs px-4 py-2 rounded-md bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 transition inline-flex items-center gap-2"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                      <polyline points="15 3 21 3 21 9"></polyline>
+                      <line x1="10" y1="14" x2="21" y2="3"></line>
+                    </svg>
+                    Open full chart on TradingView
+                  </a>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
