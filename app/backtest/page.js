@@ -108,6 +108,15 @@ export default function Backtest() {
   const [exclTo, setExclTo] = useState(""); // "HH:MM" IST — end of excluded window
   const [showCalendar, setShowCalendar] = useState(false); // toggle calendar view
   const [hoveredTrade, setHoveredTrade] = useState(null); // for chart preview
+
+  // News candle analysis state
+  const [newsEvents, setNewsEvents] = useState(null);
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [newsError, setNewsError] = useState("");
+  const [newsTypes, setNewsTypes] = useState(["NFP", "FOMC", "CPI"]);
+  const [newsYearFrom, setNewsYearFrom] = useState("2023");
+  const [newsYearTo, setNewsYearTo] = useState("2025");
+  const [selectedNewsEvent, setSelectedNewsEvent] = useState(null);
   const toast = useToast();
 
   const toMin = (hm) => {
@@ -286,6 +295,45 @@ export default function Backtest() {
     setDaySel(null);
     setShowCalendar(false);
   };
+
+  /* ---------- News Candle Analysis ---------- */
+
+  async function fetchNewsCandles() {
+    setNewsLoading(true);
+    setNewsError("");
+    setNewsEvents(null);
+    try {
+      const res = await fetch("/api/news-candles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          newsTypes,
+          fromYear: Number(newsYearFrom),
+          toYear: Number(newsYearTo),
+          limit: 60,
+        }),
+      });
+      if (res.status === 401) { window.location.href = "/login"; return; }
+      const json = await res.json();
+      if (json.error) {
+        setNewsError(json.error);
+        toast(`News analysis failed · ${json.error}`, "error");
+      } else {
+        setNewsEvents(json.events);
+        toast(`Found ${json.returned} news events`, "success");
+      }
+    } catch (e) {
+      setNewsError(String(e.message || e));
+      toast(`News analysis failed · ${e.message || e}`, "error");
+    } finally {
+      setNewsLoading(false);
+    }
+  }
+
+  // toggle a news type in the filter
+  function toggleNewsType(t) {
+    setNewsTypes((cur) => cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]);
+  }
 
   return (
     <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-6">
@@ -611,7 +659,139 @@ export default function Backtest() {
               </table>
             </div>
           </div>
+
+          {/* ---- News Candle Analysis ---- */}
+          <section className="mt-12 border-t border-border pt-8">
+            <h2 className="text-base font-bold tracking-tight mb-1">📰 News Candle Analysis</h2>
+            <p className="text-xs text-muted mb-5">
+              1m candle reaction at NFP, FOMC &amp; CPI releases · gold &amp; BTC · times in IST
+            </p>
+
+            {/* Filter bar */}
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <span className="text-[10px] uppercase tracking-wide text-muted mr-1">Events</span>
+              {["NFP","FOMC","CPI"].map((t) => (
+                <button
+                  key={t}
+                  onClick={() => toggleNewsType(t)}
+                  className={`text-xs px-3 py-1.5 rounded-md border transition ${
+                    newsTypes.includes(t)
+                      ? "border-accent bg-accent/15 text-accent font-medium"
+                      : "border-border bg-panel2 text-muted hover:border-accent/40"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+              <span className="text-[10px] uppercase tracking-wide text-muted ml-2 mr-1">From</span>
+              <select
+                value={newsYearFrom}
+                onChange={(e) => setNewsYearFrom(e.target.value)}
+                className="bg-panel2 border border-border rounded-md px-2 py-1.5 text-xs outline-none focus:border-accent/60"
+              >
+                {[2022,2023,2024,2025,2026].map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <span className="text-muted text-xs">to</span>
+              <select
+                value={newsYearTo}
+                onChange={(e) => setNewsYearTo(e.target.value)}
+                className="bg-panel2 border border-border rounded-md px-2 py-1.5 text-xs outline-none focus:border-accent/60"
+              >
+                {[2022,2023,2024,2025,2026].map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <button
+                onClick={fetchNewsCandles}
+                disabled={newsLoading || newsTypes.length === 0}
+                className="text-xs px-4 py-1.5 rounded-md bg-accent text-white font-medium hover:brightness-110 transition disabled:opacity-50"
+              >
+                {newsLoading ? "Fetching…" : "🔍 Analyze"}
+              </button>
+              {newsLoading && <span className="text-[11px] text-muted">fetching 1m candles…</span>}
+            </div>
+
+            {newsError && (
+              <div className="text-sm text-bear bg-bear/10 border border-bear/30 rounded-md px-4 py-3 mb-4">
+                {newsError}
+              </div>
+            )}
+
+            {newsEvents && (
+              <>
+                {/* Stats summary */}
+                <NewsStats events={newsEvents} />
+
+                {/* Events table */}
+                <div className="mt-4 rounded-lg border border-border bg-panel overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-border text-xs font-semibold uppercase tracking-wide text-muted flex items-center justify-between">
+                    <span>News Events ({newsEvents.length})</span>
+                    <span className="text-accent text-[10px] normal-case">💡 Click any row to view chart</span>
+                  </div>
+                  <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="text-muted sticky top-0 bg-panel z-10">
+                        <tr className="border-b border-border">
+                          <th className="text-left font-medium px-3 py-2 whitespace-nowrap">Date (IST)</th>
+                          <th className="text-left font-medium px-3 py-2 whitespace-nowrap">Time (IST)</th>
+                          <th className="text-left font-medium px-3 py-2 whitespace-nowrap">Event</th>
+                          {newsEvents[0]?.analysis?.map((a) => (
+                            <th key={a.symbol} className="text-center font-medium px-3 py-2 whitespace-nowrap">{a.symbol}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="font-mono tnum">
+                        {newsEvents.map((ev, i) => {
+                          const d = new Date(ev.ts);
+                          const istDate = new Date(d.getTime() + IST_OFFSET_MS);
+                          const dateStr = istDate.toISOString().slice(0, 10);
+                          const timeStr = istDate.toISOString().slice(11, 16);
+                          return (
+                            <tr
+                              key={i}
+                              className={`border-b border-border/50 hover:bg-panel2 cursor-pointer transition-colors ${
+                                selectedNewsEvent === ev ? "bg-accent/5" : ""
+                              }`}
+                              onClick={() => setSelectedNewsEvent(selectedNewsEvent === ev ? null : ev)}
+                            >
+                              <td className="px-3 py-1.5 whitespace-nowrap">{dateStr}</td>
+                              <td className="px-3 py-1.5 whitespace-nowrap text-muted">{timeStr}</td>
+                              <td className="px-3 py-1.5 whitespace-nowrap">
+                                <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  ev.type === "NFP" ? "bg-red-500/20 text-red-400" :
+                                  ev.type === "CPI" ? "bg-yellow-500/20 text-yellow-400" :
+                                  "bg-blue-500/20 text-blue-400"
+                                }`}>
+                                  {ev.type}
+                                </span>
+                                <span className="text-muted ml-1.5">{ev.label}</span>
+                              </td>
+                              {ev.analysis.map((a, j) => (
+                                <td key={j} className="px-3 py-1.5 text-center whitespace-nowrap">
+                                  {a.error ? (
+                                    <span className="text-bear text-[10px]" title={a.error}>⚠️</span>
+                                  ) : (
+                                    <NewsCandleBadge analysis={a} />
+                                  )}
+                                </td>
+                              ))}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+          </section>
         </>
+      )}
+
+      {/* News Event Chart Modal */}
+      {selectedNewsEvent && (
+        <NewsChart
+          event={selectedNewsEvent}
+          onClose={() => setSelectedNewsEvent(null)}
+        />
       )}
     </div>
   );
@@ -623,6 +803,287 @@ function Stat({ label, value, cls }) {
       <div className={`font-bold ${cls}`}>{value}</div>
       <div className="text-[10px] text-muted">{label}</div>
     </div>
+  );
+}
+
+/* ---------- News Candle Analysis Components ---------- */
+
+function NewsStats({ events }) {
+  // Per-symbol statistics
+  const stats = {};
+  for (const ev of events) {
+    for (const a of ev.analysis) {
+      if (a.error) continue;
+      if (!stats[a.symbol]) stats[a.symbol] = { bullish:0, bearish:0, doji:0, total:0 };
+      stats[a.symbol][a.classification]++;
+      stats[a.symbol].total++;
+    }
+  }
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+      {Object.entries(stats).map(([sym, s]) => (
+        <div key={sym} className="rounded-lg border border-border bg-panel2 p-3 flex items-center gap-4">
+          <span className="font-semibold text-sm">{sym}</span>
+          <div className="flex items-center gap-3 text-xs">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-bull"></span>
+              <span className="text-bull font-bold">{s.bullish}</span>
+              <span className="text-muted">bull</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-bear"></span>
+              <span className="text-bear font-bold">{s.bearish}</span>
+              <span className="text-muted">bear</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-yellow-400"></span>
+              <span className="text-yellow-400 font-bold">{s.doji}</span>
+              <span className="text-muted">doji</span>
+            </span>
+          </div>
+          <div className="text-xs text-muted ml-auto">
+            <span className="text-bull">{s.total > 0 ? Math.round(s.bullish/s.total*100) : 0}%</span>
+            {" "}bull rate
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function NewsCandleBadge({ analysis }) {
+  const { classification, changePct, bodyPct } = analysis;
+  const isBull = classification === "bullish";
+  const isBear = classification === "bearish";
+  const isDoji = classification === "doji";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
+        isBull ? "bg-bull/15 text-bull" :
+        isBear ? "bg-bear/15 text-bear" :
+        "bg-yellow-500/15 text-yellow-400"
+      }`}
+      title={`Change: ${changePct > 0 ? "+" : ""}${changePct}% · Body: ${bodyPct}% of range`}
+    >
+      <span>{isBull ? "▲" : isBear ? "▼" : "◆"}</span>
+      {classification.toUpperCase()}
+      {changePct !== 0 && (
+        <span className={`opacity-70 ${isBull ? "text-bull" : isBear ? "text-bear" : "text-yellow-400"}`}>
+          {changePct > 0 ? "+" : ""}{changePct}%
+        </span>
+      )}
+    </span>
+  );
+}
+
+/* ---------- News Event Chart Modal ---------- */
+
+function NewsChart({ event, onClose }) {
+  const [selectedSymbol, setSelectedSymbol] = useState(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const firstAnalysis = event.analysis?.find((a) => !a.error);
+  const activeSymbol = selectedSymbol || firstAnalysis?.symbol;
+  const activeAnalysis = event.analysis?.find((a) => a.symbol === activeSymbol && !a.error);
+
+  const d = new Date(event.ts);
+  const istDate = new Date(d.getTime() + IST_OFFSET_MS);
+  const dateStr = istDate.toISOString().slice(0, 10);
+  const timeStr = istDate.toISOString().slice(11, 16);
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="bg-panel border-2 border-accent/60 rounded-lg shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-border bg-panel2/50 shrink-0">
+            <div>
+              <h3 className="text-lg font-bold">📰 {event.label}</h3>
+              <p className="text-sm text-muted mt-1">
+                {dateStr} at {timeStr} IST · {event.timeET} ET ·{" "}
+                <span className={`font-bold ${
+                  event.type === "NFP" ? "text-red-400" :
+                  event.type === "CPI" ? "text-yellow-400" : "text-blue-400"
+                }`}>{event.type}</span>
+              </p>
+            </div>
+            <button onClick={onClose} className="text-muted hover:text-ink transition text-xl leading-none px-2 py-1 hover:bg-border/30 rounded">×</button>
+          </div>
+
+          {/* Symbol tabs */}
+          <div className="flex items-center gap-1 px-4 pt-3 pb-0 shrink-0">
+            {event.analysis.filter((a) => !a.error).map((a) => (
+              <button
+                key={a.symbol}
+                onClick={() => setSelectedSymbol(a.symbol)}
+                className={`text-xs px-3 py-1.5 rounded-t-md border border-b-0 transition ${
+                  activeSymbol === a.symbol
+                    ? "bg-panel border-accent/40 text-accent font-medium"
+                    : "bg-panel2/50 border-border text-muted hover:text-ink"
+                }`}
+              >
+                {a.symbol}
+              </button>
+            ))}
+            <div className="flex-1 border-b border-border"></div>
+          </div>
+
+          {/* Chart */}
+          <div className="flex-1 min-h-0 p-4">
+            {activeAnalysis && activeAnalysis.chartRows && activeAnalysis.chartRows.length > 0 ? (
+              <SimpleNewsChart rows={activeAnalysis.chartRows} eventTs={event.ts} analysis={activeAnalysis} />
+            ) : activeAnalysis?.error ? (
+              <div className="flex items-center justify-center h-80 text-bear text-sm">{activeAnalysis.error}</div>
+            ) : (
+              <div className="flex items-center justify-center h-80 text-muted text-sm">No candle data available</div>
+            )}
+          </div>
+
+          {/* Candle details footer */}
+          {activeAnalysis && !activeAnalysis.error && (
+            <div className="border-t border-border bg-panel2/30 shrink-0 p-3">
+              <div className="grid grid-cols-4 gap-4 text-center text-xs">
+                <div>
+                  <div className="text-muted mb-1">OPEN</div>
+                  <div className="font-bold">{activeAnalysis.candle.o.toFixed(4)}</div>
+                </div>
+                <div>
+                  <div className="text-muted mb-1">HIGH</div>
+                  <div className="font-bold text-bull">{activeAnalysis.candle.h.toFixed(4)}</div>
+                </div>
+                <div>
+                  <div className="text-muted mb-1">LOW</div>
+                  <div className="font-bold text-bear">{activeAnalysis.candle.l.toFixed(4)}</div>
+                </div>
+                <div>
+                  <div className="text-muted mb-1">CLOSE</div>
+                  <div className="font-bold">{activeAnalysis.candle.c.toFixed(4)}</div>
+                </div>
+              </div>
+              <div className="flex justify-center gap-4 mt-2 text-xs">
+                <span className="text-muted">Classification: <NewsCandleBadge analysis={activeAnalysis} /></span>
+                <span className="text-muted">Change: <span className={activeAnalysis.changePct >= 0 ? "text-bull" : "text-bear"}>
+                  {activeAnalysis.changePct > 0 ? "+" : ""}{activeAnalysis.changePct}%
+                </span></span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ---------- Simplified lightweight-charts for news events ---------- */
+
+function SimpleNewsChart({ rows, eventTs, analysis }) {
+  const containerRef = useRef(null);
+  const chartRef = useRef(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (!containerRef.current || !rows || rows.length === 0) return;
+    let chart = null;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const lwc = await import("lightweight-charts");
+        if (cancelled || !containerRef.current) return;
+
+        chart = lwc.createChart(containerRef.current, {
+          layout: {
+            background: { type: lwc.ColorType.Solid, color: "#0e1422" },
+            textColor: "#e8edff",
+            fontFamily: "ui-sans-serif, system-ui, sans-serif",
+          },
+          grid: { vertLines: { color: "#1e2840" }, horzLines: { color: "#1e2840" } },
+          rightPriceScale: { borderColor: "#1e2840", scaleMargins: { top: 0.1, bottom: 0.25 } },
+          timeScale: { borderColor: "#1e2840", timeVisible: true, secondsVisible: false },
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight,
+        });
+        chartRef.current = chart;
+
+        const candleSeries = chart.addCandlestickSeries({
+          upColor: "#26a69a", downColor: "#ef5350",
+          borderUpColor: "#26a69a", borderDownColor: "#ef5350",
+          wickUpColor: "#26a69a", wickDownColor: "#ef5350",
+        });
+
+        const seriesData = rows.map((r) => ({
+          time: Math.floor(r[0] / 1000),
+          open: r[1], high: r[2], low: r[3], close: r[4],
+        }));
+        candleSeries.setData(seriesData);
+
+        // Volume histogram
+        const volumeSeries = chart.addHistogramSeries({
+          priceFormat: { type: "volume" },
+          priceScaleId: "volume",
+          color: "#26a69a44",
+        });
+        chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
+        volumeSeries.setData(
+          rows.map((r) => ({
+            time: Math.floor(r[0] / 1000),
+            value: r[5],
+            color: r[4] >= r[1] ? "#26a69a44" : "#ef535044",
+          }))
+        );
+
+        // Marker at the event candle
+        candleSeries.setMarkers([
+          {
+            time: Math.floor(eventTs / 1000),
+            position: "aboveBar",
+            color: "#f1c40f",
+            shape: "circle",
+            text: `📰 ${analysis?.classification?.toUpperCase() || "NEWS"}`,
+            size: 2,
+          },
+        ]);
+
+        chart.timeScale().fitContent();
+      } catch (e) {
+        if (!cancelled) setErr(String(e.message || e));
+      }
+    })();
+
+    const onResize = () => {
+      if (chartRef.current && containerRef.current) {
+        chartRef.current.applyOptions({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight,
+        });
+      }
+    };
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("resize", onResize);
+      if (chartRef.current) {
+        try { chartRef.current.remove(); } catch { /* silent */ }
+        chartRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, eventTs]);
+
+  if (err) return <div className="flex items-center justify-center h-80 text-bear text-sm">{err}</div>;
+
+  return (
+    <div
+      ref={containerRef}
+      className="w-full h-[400px] min-h-[400px] rounded-lg overflow-hidden bg-[#0e1422]"
+    />
   );
 }
 
