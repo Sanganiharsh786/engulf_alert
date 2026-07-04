@@ -819,10 +819,18 @@ export default function Backtest() {
                               key={i}
                               className={`border-b border-border/50 hover:bg-panel2 cursor-pointer transition-colors ${
                                 selectedNewsEvent === ev ? "bg-accent/5" : ""
-                              }`}
+                              } ${ev.isUpcoming ? "bg-green-500/5" : ""}`}
                               onClick={() => setSelectedNewsEvent(selectedNewsEvent === ev ? null : ev)}
                             >
-                              <td className="px-3 py-1.5 whitespace-nowrap">{dateStr}</td>
+                              <td className="px-3 py-1.5 whitespace-nowrap">
+                                {dateStr}
+                                {ev.isUpcoming && (
+                                  <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-green-500/20 text-green-400 animate-pulse">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span>
+                                    UPCOMING
+                                  </span>
+                                )}
+                              </td>
                               <td className="px-3 py-1.5 whitespace-nowrap text-muted">{timeStr}</td>
                               <td className="px-3 py-1.5 whitespace-nowrap">
                                 <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -995,16 +1003,19 @@ function NewsCalendar({ monthKey, dayMap, onDayClick }) {
 
               // Collect unique news types for this day
               const types = hasNews ? [...new Set(evts.map((e) => e.type))] : [];
+              const hasUpcoming = hasNews && evts.some((e) => e.isUpcoming);
 
               return (
                 <button
                   key={day}
                   onClick={() => hasNews && onDayClick(dayKey)}
                   disabled={!hasNews}
-                  title={hasNews ? evts.map((e) => `${e.type} · ${e.label}`).join("\n") : ""}
+                  title={hasNews ? evts.map((e) => `${e.type} · ${e.label}${e.isUpcoming ? ' ⏳' : ''}`).join("\n") : ""}
                   className={`h-16 rounded-md text-xs transition relative flex flex-col items-center justify-center ${
                     !hasNews
                       ? "text-muted/30 cursor-default"
+                      : hasUpcoming
+                      ? "bg-green-500/10 border border-green-500/40 hover:border-green-400 cursor-pointer shadow-[0_0_12px_rgba(34,197,94,0.2)]"
                       : "bg-panel2 hover:bg-panel2/70 border border-border/50 hover:border-accent/40 cursor-pointer"
                   }`}
                 >
@@ -1018,7 +1029,7 @@ function NewsCalendar({ monthKey, dayMap, onDayClick }) {
                             t === "NFP" ? "bg-red-400" :
                             t === "CPI" ? "bg-yellow-400" :
                             "bg-blue-400"
-                          }`}
+                          } ${hasUpcoming ? "animate-pulse" : ""}`}
                         />
                       ))}
                     </div>
@@ -1049,6 +1060,7 @@ function NewsCalendar({ monthKey, dayMap, onDayClick }) {
           <span className="w-2.5 h-2.5 rounded-full bg-blue-400"></span>
           <span>FOMC</span>
         </div>
+        <div className="text-green-400/70 text-[10px]">🟢 Highlighted = upcoming events</div>
         <div className="text-muted/50 text-[10px]">· Click a news day to view chart</div>
       </div>
     </div>
@@ -1115,7 +1127,23 @@ function NewsChart({ event, onClose }) {
 
           {/* Chart */}
           <div className="flex-1 min-h-0 p-4">
-            {activeAnalysis && activeAnalysis.chartRows && activeAnalysis.chartRows.length > 0 ? (
+            {event.isUpcoming ? (
+              <div className="flex items-center justify-center h-80">
+                <div className="text-center max-w-md">
+                  <div className="text-4xl mb-4">📅</div>
+                  <h4 className="text-lg font-bold text-green-400 mb-2">Upcoming Event</h4>
+                  <p className="text-sm text-muted">
+                    This event hasn&apos;t occurred yet.
+                    Candle data will be available after the release at{" "}
+                    <span className="text-ink font-medium">{dateStr} {timeStr} IST</span>.
+                  </p>
+                  <div className="mt-4 flex items-center justify-center gap-2 text-xs text-muted">
+                    <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+                    <span>Waiting for release</span>
+                  </div>
+                </div>
+              </div>
+            ) : activeAnalysis && activeAnalysis.chartRows && activeAnalysis.chartRows.length > 0 ? (
               <SimpleNewsChart rows={activeAnalysis.chartRows} eventTs={event.ts} analysis={activeAnalysis} />
             ) : activeAnalysis?.error ? (
               <div className="flex items-center justify-center h-80 text-bear text-sm">{activeAnalysis.error}</div>

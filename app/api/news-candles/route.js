@@ -34,11 +34,12 @@ export async function POST(req) {
       return NextResponse.json({ error: "No BTC or Gold pairs found in store" }, { status: 400 });
     }
 
-    // Generate events
+    // Generate events — use current year as default toYear so upcoming events show
+    const currentYear = new Date().getFullYear();
     const allEvents = generateNewsEvents({
       types: newsTypes || ["NFP","FOMC","CPI"],
       fromYear: fromYear || 2023,
-      toYear: toYear || 2025,
+      toYear: toYear || currentYear,
     });
 
     // Honour limit
@@ -55,6 +56,26 @@ export async function POST(req) {
     for (let batchStart = 0; batchStart < events.length; batchStart += BATCH_SIZE) {
       const batch = events.slice(batchStart, batchStart + BATCH_SIZE);
       const batchResults = await Promise.all(batch.map(async (ev) => {
+        // For upcoming events, skip candle fetching entirely
+        if (ev.isUpcoming) {
+          return {
+            type: ev.type,
+            label: ev.label,
+            dataLabel: ev.dataLabel,
+            releaseDate: ev.releaseDate,
+            ts: ev.ts,
+            timeET: ev.timeET,
+            dateUTC: new Date(ev.ts).toISOString(),
+            importance: ev.importance,
+            isUpcoming: true,
+            analysis: requestedSymbols.map((pair) => ({
+              symbol: pair.name,
+              upcoming: true,
+              error: "upcoming — no candle data yet",
+            })),
+          };
+        }
+
         const windowStart = ev.ts - 60 * tfMs;  // 1 hour before
         const windowEnd   = ev.ts + 60 * tfMs;  // 1 hour after
 
@@ -122,6 +143,7 @@ export async function POST(req) {
           timeET: ev.timeET,
           dateUTC: new Date(ev.ts).toISOString(),
           importance: ev.importance,
+          isUpcoming: ev.isUpcoming || false,
           analysis: symbolAnalyses,
         };
       }));
