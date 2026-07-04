@@ -116,6 +116,8 @@ export async function POST(req) {
         return {
           type: ev.type,
           label: ev.label,
+          dataLabel: ev.dataLabel,
+          releaseDate: ev.releaseDate,
           ts: ev.ts,
           timeET: ev.timeET,
           dateUTC: new Date(ev.ts).toISOString(),
