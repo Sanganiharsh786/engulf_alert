@@ -117,6 +117,7 @@ export default function Backtest() {
   const [newsYearFrom, setNewsYearFrom] = useState("2023");
   const [newsYearTo, setNewsYearTo] = useState("2025");
   const [selectedNewsEvent, setSelectedNewsEvent] = useState(null);
+  const [newsMonthSel, setNewsMonthSel] = useState(null); // "YYYY-MM" or null — for calendar view
   const toast = useToast();
 
   const toMin = (hm) => {
@@ -329,6 +330,35 @@ export default function Backtest() {
       setNewsLoading(false);
     }
   }
+
+  /* ---------- News events grouped by month / day for calendar ---------- */
+
+  const newsMonths = useMemo(() => {
+    if (!newsEvents) return [];
+    const s = new Set();
+    for (const ev of newsEvents) {
+      const d = new Date(ev.ts);
+      const ist = new Date(d.getTime() + IST_OFFSET_MS);
+      s.add(ist.toISOString().slice(0, 7)); // "YYYY-MM"
+    }
+    return [...s].sort();
+  }, [newsEvents]);
+
+  /** Map day→events[] for the selected month */
+  const newsDayMap = useMemo(() => {
+    if (!newsEvents || !newsMonthSel) return {};
+    const map = {};
+    for (const ev of newsEvents) {
+      const d = new Date(ev.ts);
+      const ist = new Date(d.getTime() + IST_OFFSET_MS);
+      const day = ist.toISOString().slice(0, 10);
+      if (day.startsWith(newsMonthSel)) {
+        if (!map[day]) map[day] = [];
+        map[day].push(ev);
+      }
+    }
+    return map;
+  }, [newsEvents, newsMonthSel]);
 
   // toggle a news type in the filter
   function toggleNewsType(t) {
@@ -720,6 +750,46 @@ export default function Backtest() {
                 {/* Stats summary */}
                 <NewsStats events={newsEvents} />
 
+                {/* Month selector for news calendar */}
+                {newsMonths.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 mb-4">
+                    <span className="text-[10px] uppercase tracking-wide text-muted mr-1">Calendar</span>
+                    {newsMonths.map((m) => {
+                      const [y, mo] = m.split("-");
+                      const label = `${MONTHS[Number(mo)-1]} ${y}`;
+                      return (
+                        <button
+                          key={m}
+                          onClick={() => setNewsMonthSel(newsMonthSel === m ? null : m)}
+                          className={`text-xs px-3 py-1.5 rounded-md border transition ${
+                            newsMonthSel === m
+                              ? "border-accent bg-accent/15 text-accent font-medium"
+                              : "border-border bg-panel2 text-muted hover:border-accent/40"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* News calendar for selected month */}
+                {newsMonthSel && (
+                  <div className="mb-4">
+                    <NewsCalendar
+                      monthKey={newsMonthSel}
+                      dayMap={newsDayMap}
+                      onDayClick={(dayKey) => {
+                        const events = newsDayMap[dayKey];
+                        if (events && events.length > 0) {
+                          setSelectedNewsEvent(events[0]);
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+
                 {/* Events table */}
                 <div className="mt-4 rounded-lg border border-border bg-panel overflow-hidden">
                   <div className="px-4 py-2.5 border-b border-border text-xs font-semibold uppercase tracking-wide text-muted flex items-center justify-between">
@@ -873,6 +943,115 @@ function NewsCandleBadge({ analysis }) {
         </span>
       )}
     </span>
+  );
+}
+
+/* ---------- News Calendar Component ---------- */
+
+function NewsCalendar({ monthKey, dayMap, onDayClick }) {
+  const [year, month] = monthKey.split("-").map(Number);
+
+  const firstDay = new Date(year, month - 1, 1);
+  const lastDay = new Date(year, month, 0);
+  const daysInMonth = lastDay.getDate();
+  const startDayOfWeek = firstDay.getDay(); // 0 = Sun
+
+  // Build calendar grid
+  const calendar = [];
+  let week = [];
+  for (let i = 0; i < startDayOfWeek; i++) week.push(null);
+  for (let day = 1; day <= daysInMonth; day++) {
+    week.push(day);
+    if (week.length === 7 || day === daysInMonth) {
+      while (week.length < 7) week.push(null);
+      calendar.push(week);
+      week = [];
+    }
+  }
+
+  const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+  return (
+    <div className="bg-panel border border-border rounded-lg p-4">
+      <div className="text-center text-sm font-semibold mb-4">
+        {MONTHS[month - 1]} {year}
+      </div>
+
+      <div className="grid grid-cols-7 gap-1 mb-2">
+        {dayNames.map((n) => (
+          <div key={n} className="text-center text-xs font-medium text-muted py-1">{n}</div>
+        ))}
+      </div>
+
+      <div className="space-y-1">
+        {calendar.map((week, wi) => (
+          <div key={wi} className="grid grid-cols-7 gap-1">
+            {week.map((day, di) => {
+              if (day === null) return <div key={di} className="h-16"></div>;
+
+              const dayKey = `${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+              const evts = dayMap[dayKey];
+              const hasNews = evts && evts.length > 0;
+
+              // Collect unique news types for this day
+              const types = hasNews ? [...new Set(evts.map((e) => e.type))] : [];
+
+              return (
+                <button
+                  key={day}
+                  onClick={() => hasNews && onDayClick(dayKey)}
+                  disabled={!hasNews}
+                  title={hasNews ? evts.map((e) => `${e.type} · ${e.label}`).join("\n") : ""}
+                  className={`h-16 rounded-md text-xs transition relative flex flex-col items-center justify-center ${
+                    !hasNews
+                      ? "text-muted/30 cursor-default"
+                      : "bg-panel2 hover:bg-panel2/70 border border-border/50 hover:border-accent/40 cursor-pointer"
+                  }`}
+                >
+                  <div className="absolute top-1 left-1.5 text-[10px] font-medium">{day}</div>
+                  {hasNews && (
+                    <div className="mt-2 flex items-center gap-1">
+                      {types.map((t) => (
+                        <span
+                          key={t}
+                          className={`w-2 h-2 rounded-full ${
+                            t === "NFP" ? "bg-red-400" :
+                            t === "CPI" ? "bg-yellow-400" :
+                            "bg-blue-400"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {hasNews && (
+                    <div className="text-[9px] text-muted mt-0.5">
+                      {evts.length} event{evts.length > 1 ? "s" : ""}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
+      {/* Legend */}
+      <div className="mt-4 flex justify-center gap-4 text-xs text-muted">
+        <div className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-red-400"></span>
+          <span>NFP</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-yellow-400"></span>
+          <span>CPI</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-blue-400"></span>
+          <span>FOMC</span>
+        </div>
+        <div className="text-muted/50 text-[10px]">· Click a news day to view chart</div>
+      </div>
+    </div>
   );
 }
 
