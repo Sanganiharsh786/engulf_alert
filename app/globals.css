@@ -4,13 +4,41 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: dark;
-}
+@layer base {
+  :root {
+    color-scheme: dark;
 
-html,
-body {
-  background: #0a0e1a;
+    /* dark trading theme mapped to shadcn tokens */
+    --background: 224 44% 7%; /* #0a0e1a */
+    --foreground: 227 100% 95%; /* #e8edff */
+    --card: 222 32% 11%; /* #111726 */
+    --card-foreground: 227 100% 95%;
+    --popover: 221 42% 9%; /* #0e1422 */
+    --popover-foreground: 227 100% 95%;
+    --primary: 217 91% 60%; /* #3b82f6 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 36% 15%; /* raised panel */
+    --secondary-foreground: 227 100% 95%;
+    --muted: 222 36% 13%;
+    --muted-foreground: 221 24% 63%; /* #8b97b8 */
+    --accent: 222 36% 16%;
+    --accent-foreground: 227 100% 95%;
+    --destructive: 4 84% 63%; /* #ef5350 */
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 36% 18%; /* #1e2840 */
+    --input: 222 36% 18%;
+    --ring: 217 91% 60%;
+    --radius: 0.5rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body {
+    @apply bg-background text-foreground;
+  }
 }
 
 .tnum {
