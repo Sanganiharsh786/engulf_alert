@@ -76,16 +76,6 @@ export function TradingViewChart({ trade, rows, signalTs }) {
   const chartRef = useRef(null);
   const [error, setError] = useState("");
 
-  // Pre-parse the level "low-high" string into numbers.
-  let levelLow = null, levelHigh = null;
-  if (trade.level && typeof trade.level === "string" && trade.level.includes("-")) {
-    const [a, b] = trade.level.split("-").map(parseFloat);
-    if (!isNaN(a) && !isNaN(b)) {
-      levelLow = Math.min(a, b);
-      levelHigh = Math.max(a, b);
-    }
-  }
-
   useEffect(() => {
     if (!containerRef.current || !rows || rows.length === 0) return;
 
@@ -157,40 +147,6 @@ export function TradingViewChart({ trade, rows, signalTs }) {
           }))
         );
 
-        const dashed = lwc.LineStyle.Dashed;
-        const dotted = lwc.LineStyle.Dotted;
-
-        if (trade.entry != null) {
-          candleSeries.createPriceLine({
-            price: Number(trade.entry),
-            color: "#ffffff",
-            lineWidth: 1,
-            lineStyle: dashed,
-            axisLabelVisible: true,
-            title: "ENTRY",
-          });
-        }
-        if (trade.stop != null) {
-          candleSeries.createPriceLine({
-            price: Number(trade.stop),
-            color: "#ef5350",
-            lineWidth: 2,
-            lineStyle: lwc.LineStyle.Solid,
-            axisLabelVisible: true,
-            title: "SL",
-          });
-        }
-        if (trade.tp != null) {
-          candleSeries.createPriceLine({
-            price: Number(trade.tp),
-            color: "#26a69a",
-            lineWidth: 2,
-            lineStyle: lwc.LineStyle.Solid,
-            axisLabelVisible: true,
-            title: "TP",
-          });
-        }
-
         // SL / TP filled risk-reward zones (start at signal candle, extend to last bar)
         const sigSec = Math.floor(Number(signalTs ?? trade.ts) / 1000);
         const lastSec = Math.floor(rows[rows.length - 1][0] / 1000);
@@ -220,25 +176,6 @@ export function TradingViewChart({ trade, rows, signalTs }) {
             );
           }
         }
-        if (levelLow != null && levelHigh != null) {
-          candleSeries.createPriceLine({
-            price: levelHigh,
-            color: "#f1c40f",
-            lineWidth: 1,
-            lineStyle: dotted,
-            axisLabelVisible: true,
-            title: "LVL HI",
-          });
-          candleSeries.createPriceLine({
-            price: levelLow,
-            color: "#f1c40f",
-            lineWidth: 1,
-            lineStyle: dotted,
-            axisLabelVisible: true,
-            title: "LVL LO",
-          });
-        }
-
         // Marker on the engulfing signal candle.
         const sigTs = Number(signalTs ?? trade.ts);
         if (sigTs) {
