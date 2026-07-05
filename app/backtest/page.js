@@ -481,6 +481,7 @@ export default function Backtest() {
               sessions={sessions}
               selected={sessionSel}
               onToggle={toggleSession}
+              onSelectCombo={setSessionSel}
             />
           </div>
 
