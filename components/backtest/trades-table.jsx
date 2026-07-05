@@ -12,7 +12,17 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { fmt } from "@/components/backtest/utils";
+import { SESSIONS, fmt, sessionOf } from "@/components/backtest/utils";
+
+const SESSION_LABEL = Object.fromEntries(SESSIONS.map((s) => [s.key, s.short]));
+
+function SessionTag({ time }) {
+  return (
+    <Badge variant="outline" className="border-border text-[10px] text-muted-foreground">
+      {SESSION_LABEL[sessionOf(time)]}
+    </Badge>
+  );
+}
 
 function OutcomeBadge({ outcome }) {
   return (
@@ -63,7 +73,7 @@ export function TradesTable({ trades, onTradeClick }) {
           <Table>
             <TableHeader>
               <TableRow>
-                {["Date/Time IST", "Day", "Pair", "Dir", "Level", "Entry", "Stop", "TP", "SL pips", "Lots", "Outcome", "Bars", "R"].map((h) => (
+                {["Date/Time IST", "Day", "Session", "Pair", "Dir", "Level", "Entry", "Stop", "TP", "SL pips", "Lots", "Outcome", "Bars", "R"].map((h) => (
                   <TableHead key={h} className="whitespace-nowrap text-xs">
                     {h}
                   </TableHead>
@@ -80,6 +90,9 @@ export function TradesTable({ trades, onTradeClick }) {
                 >
                   <TableCell className="whitespace-nowrap">{t.time}</TableCell>
                   <TableCell>{t.day}</TableCell>
+                  <TableCell>
+                    <SessionTag time={t.time} />
+                  </TableCell>
                   <TableCell className="whitespace-nowrap font-semibold">{t.pair}</TableCell>
                   <TableCell>
                     <DirBadge direction={t.direction} />
@@ -119,6 +132,7 @@ export function TradesTable({ trades, onTradeClick }) {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold">{t.pair}</span>
                 <DirBadge direction={t.direction} />
+                <SessionTag time={t.time} />
                 <OutcomeBadge outcome={t.outcome} />
                 <span
                   className={cn(
