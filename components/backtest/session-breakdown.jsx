@@ -3,10 +3,18 @@
 import { Trophy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { SESSION_COMBOS, mergeSessionStats } from "@/components/backtest/utils";
+
+// True when the current selection is exactly this combo's session keys.
+function comboActive(selected, keys) {
+  return (
+    selected.length === keys.length && keys.every((k) => selected.includes(k))
+  );
+}
 
 // Clickable session cards. Clicking a card toggles it in the session filter.
 // wins = TP hits, losses = SL hits.
-export function SessionBreakdown({ sessions, selected = [], onToggle }) {
+export function SessionBreakdown({ sessions, selected = [], onToggle, onSelectCombo }) {
   // best session = highest net R among sessions that have closed trades
   let bestKey = null;
   let bestR = -Infinity;
@@ -18,7 +26,8 @@ export function SessionBreakdown({ sessions, selected = [], onToggle }) {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {sessions.map((s) => {
         const active = selected.includes(s.key);
         const isBest = s.key === bestKey && s.closed > 0;
@@ -86,6 +95,61 @@ export function SessionBreakdown({ sessions, selected = [], onToggle }) {
           </button>
         );
       })}
+      </div>
+
+      {/* session overlap / combo presets */}
+      {onSelectCombo && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            Session combos
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {SESSION_COMBOS.map((c) => {
+              const stat = mergeSessionStats(sessions, c.keys);
+              const active = comboActive(selected, c.keys);
+              const empty = stat.signals === 0;
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={() => onSelectCombo(active ? [] : c.keys)}
+                  aria-pressed={active}
+                  disabled={empty}
+                  className={cn(
+                    "flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition",
+                    active
+                      ? "border-primary bg-primary/10"
+                      : "border-border bg-card hover:border-primary/40",
+                    empty && "cursor-not-allowed opacity-50 hover:border-border"
+                  )}
+                >
+                  <span className="font-semibold">{c.label}</span>
+                  <span
+                    className={cn(
+                      "font-mono tnum",
+                      stat.closed === 0
+                        ? "text-muted-foreground"
+                        : stat.winRate >= 50
+                        ? "text-bull"
+                        : "text-bear"
+                    )}
+                  >
+                    {stat.winRate}%
+                  </span>
+                  <span
+                    className={cn(
+                      "font-mono tnum",
+                      stat.netR >= 0 ? "text-bull" : "text-bear"
+                    )}
+                  >
+                    {stat.netR > 0 ? `+${stat.netR}` : stat.netR}R
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

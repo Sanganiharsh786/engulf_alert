@@ -43,6 +43,35 @@ export function sessionOf(time) {
   return "newyork";
 }
 
+// Preset session combinations ("overlaps"). Each combo is the union of two
+// adjacent sessions, matching how traders think about back-to-back / overlap
+// activity. `keys` map to SESSIONS keys and plug straight into the existing
+// union-based session filter.
+export const SESSION_COMBOS = [
+  { key: "syd_tyo", label: "Sydney + Tokyo", short: "SYD+TYO", keys: ["sydney", "tokyo"] },
+  { key: "tyo_ldn", label: "Tokyo + London", short: "TYO+LDN", keys: ["tokyo", "london"] },
+  { key: "ldn_ny", label: "London + New York", short: "LDN+NY", keys: ["london", "newyork"] },
+];
+
+// Merge per-session summaries into one aggregate stat for a set of session keys.
+export function mergeSessionStats(sessions, keys) {
+  const acc = { signals: 0, closed: 0, wins: 0, losses: 0, open: 0, netR: 0 };
+  for (const s of sessions) {
+    if (!keys.includes(s.key)) continue;
+    acc.signals += s.signals;
+    acc.closed += s.closed;
+    acc.wins += s.wins;
+    acc.losses += s.losses;
+    acc.open += s.open;
+    acc.netR += s.netR;
+  }
+  return {
+    ...acc,
+    netR: Math.round(acc.netR * 100) / 100,
+    winRate: acc.closed ? Math.round((acc.wins / acc.closed) * 1000) / 10 : 0,
+  };
+}
+
 // win rate / TP–SL hits / net R per trading session
 export function summarizeBySession(trades) {
   const map = {};
