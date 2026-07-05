@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readStore, writeStore } from "@/lib/store";
-import { runScan } from "@/lib/scanner";
+import { runScan, ensureDnaLibrary } from "@/lib/scanner";
 import { currentUser } from "@/lib/session";
 import { listUsers } from "@/lib/auth";
 
@@ -21,6 +21,7 @@ export async function GET(req) {
     for (const user of listUsers()) {
       try {
         const store = await readStore(user);
+        await ensureDnaLibrary(store);
         const out = await runScan(store, {});
         await writeStore(user, store);
         users[user] = out.results.reduce(
@@ -38,6 +39,7 @@ export async function GET(req) {
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   try {
     const store = await readStore(user);
+    await ensureDnaLibrary(store);
     const out = await runScan(store, {});
     await writeStore(user, store);
     return NextResponse.json(out);
@@ -58,6 +60,7 @@ export async function POST(req) {
       /* no body is fine */
     }
     const store = await readStore(user);
+    await ensureDnaLibrary(store);
     const out = await runScan(store, { dryRun });
     await writeStore(user, store);
     return NextResponse.json(out);

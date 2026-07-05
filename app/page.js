@@ -272,7 +272,7 @@ export default function Dashboard() {
 
         {/* sidebar */}
         <div className="flex flex-col gap-5">
-          <SettingsPanel settings={store.settings} mutate={mutate} />
+          <SettingsPanel settings={store.settings} mutate={mutate} dna={store.dna} />
           <SignalLog signals={signals} />
         </div>
       </div>
@@ -421,6 +421,14 @@ function PairCard({ pair, result, mutate }) {
             {dir.toUpperCase()} ENGULF
           </Badge>
         )}
+        {result?.alerts?.some((a) => a.dna && !a.dna.pending) && (
+          <Badge variant="outline" className="border-gold/40 bg-gold/10 font-mono text-gold" title="Signal DNA match vs historical winners">
+            {(() => {
+              const d = result.alerts.find((a) => a.dna && !a.dna.pending).dna;
+              return `DNA ${Math.round(d.sim)}% · ${d.record}`;
+            })()}
+          </Badge>
+        )}
         {result?.last && (
           <span className="font-mono text-xs text-muted-foreground tnum">last {fmt(result.last.close)}</span>
         )}
@@ -505,6 +513,17 @@ function PairCard({ pair, result, mutate }) {
           placeholder="gold 0.1 · crypto 1"
         />
       </div>
+
+      {/* DNA-suppressed signals */}
+      {result?.dnaSkipped?.length > 0 && (
+        <div className="border-b border-border bg-popover px-4 py-2">
+          {result.dnaSkipped.map((s, i) => (
+            <p key={i} className="font-mono text-[10px] text-muted-foreground">
+              {`${s.direction} signal suppressed by DNA filter (${s.matches ? `${s.sim}% similar, ${s.matches} match${s.matches === 1 ? "" : "es"} went ${s.record}` : "no similar historical winners"})`}
+            </p>
+          ))}
+        </div>
+      )}
 
       {/* live chart */}
       {showChart && (
@@ -666,8 +685,14 @@ function RiskField({ label, value, onChange, placeholder }) {
 }
 
 /* ---------- settings ---------- */
-function SettingsPanel({ settings, mutate }) {
+function SettingsPanel({ settings, mutate, dna }) {
   const setS = (field, value) => mutate((s) => (s.settings[field] = value));
+  const setDna = (field, value) =>
+    mutate((s) => {
+      if (!s.settings.dna) s.settings.dna = {};
+      s.settings.dna[field] = value;
+    });
+  const dnaCfg = { enabled: false, minSimilarity: 85, minWinRate: 60, minMatches: 5, ...(settings.dna || {}) };
   const setEmail = (field, value) => mutate((s) => (s.settings.email[field] = value));
   const setTelegram = (field, value) => mutate((s) => {
     if (!s.settings.telegram) s.settings.telegram = {};
@@ -785,6 +810,55 @@ function SettingsPanel({ settings, mutate }) {
             { value: "close", label: "Close", hint: "candle closes inside the zone" },
           ]}
         />
+
+        <Separator />
+
+        <div className="flex flex-col gap-3 text-xs">
+          <h3 className="text-[10px] uppercase tracking-wide text-muted-foreground">Signal DNA filter</h3>
+          <label className="flex cursor-pointer items-start gap-2">
+            <Checkbox
+              checked={!!dnaCfg.enabled}
+              onCheckedChange={(v) => setDna("enabled", !!v)}
+              className="mt-0.5"
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="font-medium text-foreground">Only alert on DNA-matched winners</span>
+              <span className="leading-relaxed text-muted-foreground">
+                Fingerprints each engulfing candle&apos;s shape (body ratio, wicks, ATR context) and only
+                alerts when it matches historically winning patterns. Non-matching signals are suppressed.
+              </span>
+            </span>
+          </label>
+          {dnaCfg.enabled && (
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                <RiskField
+                  label="Min similarity %"
+                  value={dnaCfg.minSimilarity}
+                  onChange={(v) => setDna("minSimilarity", v)}
+                  placeholder="85"
+                />
+                <RiskField
+                  label="Min win rate %"
+                  value={dnaCfg.minWinRate}
+                  onChange={(v) => setDna("minWinRate", v)}
+                  placeholder="60"
+                />
+                <RiskField
+                  label="Min matches"
+                  value={dnaCfg.minMatches}
+                  onChange={(v) => setDna("minMatches", v)}
+                  placeholder="5"
+                />
+              </div>
+              <p className="font-mono text-[10px] text-muted-foreground">
+                {dna && dna.builtAt
+                  ? `Library: ${dna.count} historical trades · built ${new Date(dna.builtAt).toLocaleString()} · refreshes every 24h`
+                  : "Library builds automatically on the next scan (~6 months of history per pair). Alerts fire normally until it's ready."}
+              </p>
+            </>
+          )}
+        </div>
 
         <Separator />
 

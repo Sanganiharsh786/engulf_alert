@@ -4,7 +4,7 @@
 //   npm run worker
 //
 import { readStore, writeStore } from "./lib/store.js";
-import { runScan } from "./lib/scanner.js";
+import { runScan, ensureDnaLibrary } from "./lib/scanner.js";
 import { listUsers } from "./lib/auth.js";
 
 async function loop() {
@@ -14,6 +14,7 @@ async function loop() {
     for (const user of listUsers()) {
       const store = await readStore(user);
       waitMs = (store.settings.pollIntervalSeconds || 60) * 1000;
+      await ensureDnaLibrary(store);
       const out = await runScan(store, {});
       await writeStore(user, store);
       const alerts = out.results.reduce((a, r) => a + ((r.alerts && r.alerts.length) || 0), 0);

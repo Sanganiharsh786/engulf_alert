@@ -28,11 +28,15 @@ export async function GET(req) {
   const exclFrom = searchParams.get("exclFrom") != null ? Number(searchParams.get("exclFrom")) : null;
   const exclTo = searchParams.get("exclTo") != null ? Number(searchParams.get("exclTo")) : null;
 
+  const dnaOnly = searchParams.get("dna") === "1";
+
   const store = await readStore(user);
   // when a from/to window is given, fetch exactly that window; else use days
   const full = await runBacktest(store, from && to ? { from, to } : { days });
-  const trades = filterTrades(full.trades, { from, to, pairs, exclFrom, exclTo });
+  let trades = filterTrades(full.trades, { from, to, pairs, exclFrom, exclTo });
+  if (dnaOnly) trades = trades.filter((t) => t.dnaPass);
   const out = { trades, summaries: summarizeTrades(trades) };
+  const hasDna = trades.some((t) => t.dnaPass !== undefined);
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "Engulfing Alerts";
@@ -77,9 +81,19 @@ export async function GET(req) {
     { header: "Outcome", key: "outcome", width: 10 },
     { header: "Bars held", key: "barsHeld", width: 10 },
     { header: "R", key: "r", width: 8 },
+    ...(hasDna
+      ? [
+          { header: "DNA similarity %", key: "dnaSim", width: 16 },
+          { header: "DNA matches", key: "dnaMatches", width: 13 },
+          { header: "DNA record (W-L)", key: "dnaRecord", width: 16 },
+          { header: "DNA pass", key: "dnaPassText", width: 10 },
+        ]
+      : []),
   ];
   tr.getRow(1).font = { bold: true };
-  for (const t of out.trades) tr.addRow(t);
+  for (const t of out.trades) {
+    tr.addRow(hasDna ? { ...t, dnaPassText: t.dnaPass ? "YES" : "no" } : t);
+  }
 
   const buf = await wb.xlsx.writeBuffer();
   const stamp = new Date().toISOString().slice(0, 10);
