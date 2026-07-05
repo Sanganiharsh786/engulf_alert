@@ -22,13 +22,17 @@ import { TradesCalendar } from "@/components/backtest/calendars";
 import { TradesTable } from "@/components/backtest/trades-table";
 import { TradeChartDialog } from "@/components/backtest/trade-chart-dialog";
 import { NewsSection } from "@/components/backtest/news-section";
+import { SessionBreakdown } from "@/components/backtest/session-breakdown";
 import {
   IST_OFFSET_MS,
+  SESSIONS,
   getTodayIST,
   monthLabel,
+  sessionOf,
   summarize,
   summarizeByDay,
   summarizeByMonth,
+  summarizeBySession,
 } from "@/components/backtest/utils";
 import { useToast } from "../toast";
 import { cn } from "@/lib/utils";
@@ -42,6 +46,7 @@ export default function Backtest() {
   const [pairSel, setPairSel] = useState([]); // empty = all
   const [monthSel, setMonthSel] = useState(null); // "YYYY-MM" or null = all months
   const [daySel, setDaySel] = useState(null); // "YYYY-MM-DD" or null = all days
+  const [sessionSel, setSessionSel] = useState([]); // session keys, empty = all sessions
   const [period, setPeriod] = useState("recent"); // "recent" | "today" | "2023" | "2024" | ...
   const [exclFrom, setExclFrom] = useState(""); // "HH:MM" IST — start of excluded window
   const [exclTo, setExclTo] = useState(""); // "HH:MM" IST — end of excluded window
@@ -81,6 +86,7 @@ export default function Backtest() {
     setError("");
     setMonthSel(null);
     setDaySel(null);
+    setSessionSel([]);
     setShowCalendar(false);
     try {
       let body;
@@ -163,12 +169,27 @@ export default function Backtest() {
     return summarizeByDay(monthTrades);
   }, [pairFiltered, monthSel]);
 
-  const filtered = useMemo(() => {
+  // trades within the selected pair + excl + month + day scope, before the
+  // session filter is applied (so the session breakdown always shows every
+  // session for the current date scope)
+  const dateScoped = useMemo(() => {
     let result = pairFiltered;
     if (monthSel) result = result.filter((t) => t.time.slice(0, 7) === monthSel);
     if (daySel) result = result.filter((t) => t.time.slice(0, 10) === daySel);
     return result;
   }, [pairFiltered, monthSel, daySel]);
+
+  const sessions = useMemo(() => summarizeBySession(dateScoped), [dateScoped]);
+
+  const filtered = useMemo(() => {
+    if (!sessionSel.length) return dateScoped;
+    return dateScoped.filter((t) => sessionSel.includes(sessionOf(t.time)));
+  }, [dateScoped, sessionSel]);
+
+  const toggleSession = (key) =>
+    setSessionSel((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
 
   const summaries = useMemo(() => summarize(filtered), [filtered]);
 
@@ -230,16 +251,23 @@ export default function Backtest() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pairSel, monthSel, daySel, period, exclActive, exclFrom, exclTo]);
 
-  const hasActiveFilters = pairSel.length > 0 || monthSel || daySel || exclActive;
+  const hasActiveFilters =
+    pairSel.length > 0 || monthSel || daySel || exclActive || sessionSel.length > 0;
 
   const reset = () => {
     setPairSel([]);
     setMonthSel(null);
     setDaySel(null);
+    setSessionSel([]);
     setShowCalendar(false);
     setExclFrom("");
     setExclTo("");
   };
+
+  const sessionSelLabel = sessionSel
+    .map((k) => SESSIONS.find((s) => s.key === k)?.label)
+    .filter(Boolean)
+    .join(", ");
 
   return (
     <main className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6">
@@ -383,6 +411,7 @@ export default function Backtest() {
                   Showing {filtered.length} of {data.trades.length} trades
                   {daySel && ` · ${daySel}`}
                   {monthSel && !daySel && ` · ${monthLabel(monthSel)}`}
+                  {sessionSel.length > 0 && ` · ${sessionSelLabel} session`}
                 </span>
                 {hasActiveFilters && (
                   <Button variant="ghost" size="sm" onClick={reset}>
@@ -430,6 +459,29 @@ export default function Backtest() {
               cls={totals.netR >= 0 ? "text-bull" : "text-bear"}
             />
             <OverallStat label="Still open" value={totals.open} cls="text-muted-foreground" />
+          </div>
+
+          {/* session performance breakdown */}
+          <div className="mt-6">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Performance by session (IST){" "}
+                {sessionSel.length > 0
+                  ? "· click again to clear"
+                  : "· click a session to filter"}
+              </span>
+              {sessionSel.length > 0 && (
+                <Button variant="ghost" size="sm" onClick={() => setSessionSel([])}>
+                  <X />
+                  Clear session
+                </Button>
+              )}
+            </div>
+            <SessionBreakdown
+              sessions={sessions}
+              selected={sessionSel}
+              onToggle={toggleSession}
+            />
           </div>
 
           {/* monthly win rate breakdown */}
