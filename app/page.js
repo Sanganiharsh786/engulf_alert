@@ -15,7 +15,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { buildChartSVG } from "@/lib/chart";
+import { LiveChart } from "@/components/live-chart";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -389,32 +389,11 @@ function Preflight({ checks, onClose }) {
 /* ---------- pair card ---------- */
 function PairCard({ pair, result, mutate }) {
   const [showChart, setShowChart] = useState(false);
-  const [svg, setSvg] = useState("");
-  const [loadingChart, setLoadingChart] = useState(false);
 
   const dir = result?.direction;
   const lvlResult = (id) => result?.levels?.find((l) => l.id === id);
 
-  async function toggleChart() {
-    if (showChart) return setShowChart(false);
-    setShowChart(true);
-    setLoadingChart(true);
-    try {
-      const data = await fetch(`/api/candles?pairId=${pair.id}`).then((r) => r.json());
-      if (data.rows) {
-        // draw the offset-shifted zones so the chart matches what's watched
-        const off = Number(pair.levelOffset) || 0;
-        const chartPair = off
-          ? { ...pair, levels: pair.levels.map((l) => ({ ...l, low: l.low + off, high: l.high + off })) }
-          : pair;
-        setSvg(buildChartSVG({ pair: chartPair, tf: data.tf, rows: data.rows, signalTs: result?.last?.ts, direction: dir }));
-      } else {
-        setSvg("");
-      }
-    } finally {
-      setLoadingChart(false);
-    }
-  }
+  const toggleChart = () => setShowChart((v) => !v);
 
   const set = (field, value) =>
     mutate((s) => {
@@ -454,7 +433,7 @@ function PairCard({ pair, result, mutate }) {
           </Button>
           <Button variant="ghost" size="sm" onClick={toggleChart}>
             <BarChart3 />
-            <span className="hidden sm:inline">{showChart ? "Hide chart" : "Chart"}</span>
+            <span className="hidden sm:inline">{showChart ? "Hide chart" : "Live chart"}</span>
           </Button>
           <Button
             variant="ghost"
@@ -527,18 +506,10 @@ function PairCard({ pair, result, mutate }) {
         />
       </div>
 
-      {/* chart */}
+      {/* live chart */}
       {showChart && (
         <div className="border-b border-border bg-popover px-4 py-3">
-          {loadingChart ? (
-            <div className="py-8 text-center text-xs text-muted-foreground">Loading candles…</div>
-          ) : svg ? (
-            <div className="w-full overflow-hidden rounded-md" dangerouslySetInnerHTML={{ __html: svg }} />
-          ) : (
-            <div className="py-8 text-center text-xs text-bear">
-              Could not load candles — check the symbol/exchange.
-            </div>
-          )}
+          <LiveChart pair={pair} signalTs={result?.last?.ts} direction={dir} />
         </div>
       )}
 
