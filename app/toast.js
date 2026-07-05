@@ -1,6 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useRef, useState } from "react";
+import { CheckCircle2, XCircle, Info, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const ToastContext = createContext(() => {});
 
@@ -10,9 +12,9 @@ export function useToast() {
 }
 
 const STYLES = {
-  success: { bar: "bg-bull", icon: "✓", text: "text-bull" },
-  error: { bar: "bg-bear", icon: "✕", text: "text-bear" },
-  info: { bar: "bg-accent", icon: "ℹ", text: "text-accent" },
+  success: { accent: "text-bull", Icon: CheckCircle2, bar: "bg-bull" },
+  error: { accent: "text-bear", Icon: XCircle, bar: "bg-bear" },
+  info: { accent: "text-primary", Icon: Info, bar: "bg-primary" },
 };
 
 export function ToastProvider({ children }) {
@@ -39,21 +41,22 @@ export function ToastProvider({ children }) {
       <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 w-[min(360px,calc(100vw-2rem))] pointer-events-none">
         {toasts.map((t) => {
           const s = STYLES[t.type] || STYLES.info;
+          const Icon = s.Icon;
           return (
             <div
               key={t.id}
               role="status"
-              className="pointer-events-auto flex items-start gap-3 rounded-lg border border-border bg-panel shadow-2xl overflow-hidden animate-toast-in"
+              className="pointer-events-auto flex items-stretch gap-3 rounded-lg border bg-card text-card-foreground shadow-2xl overflow-hidden animate-toast-in"
             >
-              <span className={`w-1 self-stretch ${s.bar}`} />
-              <span className={`pt-3 text-sm font-bold ${s.text}`}>{s.icon}</span>
-              <span className="flex-1 py-3 text-sm text-ink pr-1 break-words">{t.message}</span>
+              <span className={cn("w-1 shrink-0", s.bar)} />
+              <Icon className={cn("mt-3 size-4 shrink-0", s.accent)} aria-hidden="true" />
+              <span className="flex-1 py-3 text-sm pr-1 break-words leading-relaxed">{t.message}</span>
               <button
                 onClick={() => dismiss(t.id)}
-                className="px-3 py-3 text-muted hover:text-ink text-sm shrink-0"
-                aria-label="Dismiss"
+                className="px-3 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                aria-label="Dismiss notification"
               >
-                ✕
+                <X className="size-4" />
               </button>
             </div>
           );

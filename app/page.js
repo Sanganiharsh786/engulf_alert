@@ -1,7 +1,39 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  BarChart3,
+  Bell,
+  CheckCircle2,
+  ExternalLink,
+  ListChecks,
+  LogOut,
+  Plus,
+  RefreshCw,
+  Save,
+  Trash2,
+  X,
+  XCircle,
+} from "lucide-react";
 import { buildChartSVG } from "@/lib/chart";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { cn } from "@/lib/utils";
 import { useToast } from "./toast";
 
 /* ---------- small helpers ---------- */
@@ -168,11 +200,11 @@ export default function Dashboard() {
   }
 
   if (!store) {
-    return <div className="p-10 text-muted">Loading…</div>;
+    return <div className="p-10 text-muted-foreground">Loading…</div>;
   }
 
   return (
-    <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-6">
+    <main className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6">
       <TopBar
         auto={auto}
         setAuto={setAuto}
@@ -192,14 +224,16 @@ export default function Dashboard() {
 
       {preflight && <Preflight checks={preflight} onClose={() => setPreflight(null)} />}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-5 mt-5">
+      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_340px]">
         {/* main: pairs */}
-        <div className="space-y-5">
+        <div className="flex flex-col gap-5">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold tracking-wide text-muted uppercase">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Pairs &amp; levels
             </h2>
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() =>
                 mutate((s) =>
                   s.pairs.push({
@@ -217,112 +251,95 @@ export default function Dashboard() {
                   })
                 )
               }
-              className="text-xs px-3 py-1.5 rounded-md bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 transition"
             >
-              + Add pair
-            </button>
+              <Plus />
+              Add pair
+            </Button>
           </div>
 
           {store.pairs.length === 0 && (
-            <div className="rounded-lg border border-border bg-panel p-8 text-center text-muted text-sm">
-              No pairs yet. Add one to start watching for engulfing signals.
-            </div>
+            <Card>
+              <CardContent className="p-8 text-center text-sm text-muted-foreground">
+                No pairs yet. Add one to start watching for engulfing signals.
+              </CardContent>
+            </Card>
           )}
 
           {store.pairs.map((pair) => (
-            <PairCard
-              key={pair.id}
-              pair={pair}
-              result={results[pair.name]}
-              mutate={mutate}
-            />
+            <PairCard key={pair.id} pair={pair} result={results[pair.name]} mutate={mutate} />
           ))}
         </div>
 
         {/* sidebar */}
-        <div className="space-y-5">
-          <Settings settings={store.settings} mutate={mutate} />
+        <div className="flex flex-col gap-5">
+          <SettingsPanel settings={store.settings} mutate={mutate} />
           <SignalLog signals={signals} />
         </div>
       </div>
-    </div>
+    </main>
   );
 }
 
 /* ---------- top bar ---------- */
 function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onScan, onPreflight, pfRunning, user, onLogout }) {
   return (
-    <header className="flex flex-wrap items-center gap-3 justify-between border-b border-border pb-4">
+    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
       <div className="flex items-center gap-3">
-        <span className={`h-2.5 w-2.5 rounded-full ${auto ? "bg-bull animate-pulse" : "bg-muted/40"}`} />
+        <span className={cn("size-2.5 rounded-full", auto ? "animate-pulse bg-bull" : "bg-muted-foreground/40")} />
         <div>
           <h1 className="text-lg font-bold tracking-tight">Engulfing Alerts</h1>
-          <p className="text-xs text-muted">
+          <p className="text-xs text-muted-foreground">
             {lastScan ? `Last scan ${new Date(lastScan).toLocaleTimeString()}` : "Not scanned yet"}
             {scanning && " · scanning…"}
           </p>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
         {user && (
-          <span className="flex items-center gap-2 text-xs px-3 py-2 rounded-md border border-border bg-panel text-muted">
-            <span className="h-5 w-5 rounded-full bg-accent/20 text-accent flex items-center justify-center text-[10px] font-bold uppercase">
+          <span className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
+            <span className="flex size-5 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold uppercase text-primary">
               {user.slice(0, 1)}
             </span>
             {user}
           </span>
         )}
-        <button
-          onClick={onPreflight}
-          disabled={pfRunning}
-          className="text-xs px-3 py-2 rounded-md border border-border bg-panel hover:bg-panel/70 transition disabled:opacity-50"
-        >
+        <Button variant="outline" size="sm" onClick={onPreflight} disabled={pfRunning}>
+          <ListChecks />
           {pfRunning ? "Checking…" : "Run check"}
-        </button>
-        <a
-          href="/backtest"
-          className="text-xs px-3 py-2 rounded-md border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 transition"
-          title="Backtest results & Excel export"
-        >
-          Backtest
-        </a>
-        <a
-          href="/totalalerts"
-          className="text-xs px-3 py-2 rounded-md border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 transition"
-          title="All alerts — tick which trades you placed"
-        >
-          Total Alerts
-        </a>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <a href="/backtest" title="Backtest results & Excel export">
+            <BarChart3 />
+            Backtest
+          </a>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <a href="/totalalerts" title="All alerts — tick which trades you placed">
+            <Bell />
+            Total Alerts
+          </a>
+        </Button>
 
-        <label className="flex items-center gap-2 text-xs px-3 py-2 rounded-md border border-border bg-panel cursor-pointer select-none">
-          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="accent-accent" />
+        <label className="flex h-9 cursor-pointer select-none items-center gap-2 rounded-md border border-border bg-card px-3 text-xs">
+          <Switch checked={auto} onCheckedChange={setAuto} aria-label="Toggle auto-scan" />
           Auto-scan
         </label>
-        <button
-          onClick={onScan}
-          disabled={scanning}
-          className="text-xs px-3 py-2 rounded-md bg-accent text-white font-medium hover:brightness-110 transition disabled:opacity-50"
-        >
+        <Button size="sm" onClick={onScan} disabled={scanning}>
+          <RefreshCw className={cn(scanning && "animate-spin")} />
           {scanning ? "Scanning…" : "Scan now"}
-        </button>
+        </Button>
         {dirty && (
-          <button
-            onClick={onSave}
-            disabled={saving}
-            className="text-xs px-3 py-2 rounded-md bg-bull text-white font-medium hover:brightness-110 transition disabled:opacity-50"
-          >
+          <Button size="sm" onClick={onSave} disabled={saving} className="bg-bull text-white hover:bg-bull/90">
+            <Save />
             {saving ? "Saving…" : "Save changes"}
-          </button>
+          </Button>
         )}
         {user && (
-          <button
-            onClick={onLogout}
-            className="text-xs px-3 py-2 rounded-md border border-border bg-panel hover:bg-bear/15 hover:text-bear hover:border-bear/40 transition"
-            title="Sign out"
-          >
+          <Button variant="outline" size="sm" onClick={onLogout} title="Sign out">
+            <LogOut />
             Logout
-          </button>
+          </Button>
         )}
       </div>
     </header>
@@ -332,33 +349,40 @@ function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onSc
 /* ---------- preflight panel ---------- */
 function Preflight({ checks, onClose }) {
   return (
-    <div className="mt-5 rounded-lg border border-border bg-panel overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted">Startup check</span>
-        <button onClick={onClose} className="text-muted hover:text-ink text-sm">✕</button>
-      </div>
-      <div className="divide-y divide-border">
+    <Card className="mt-5 overflow-hidden">
+      <CardHeader className="flex-row items-center justify-between border-b border-border px-4 py-2.5">
+        <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Startup check
+        </CardTitle>
+        <Button variant="ghost" size="icon" className="size-7" onClick={onClose} aria-label="Close startup check">
+          <X />
+        </Button>
+      </CardHeader>
+      <CardContent className="divide-y divide-border p-0">
         {checks.map((c, i) => (
           <div key={i} className="flex items-start gap-3 px-4 py-2.5">
-            <span
-              className={`mt-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                c.pass ? "bg-bull/15 text-bull" : "bg-bear/15 text-bear"
-              }`}
+            <Badge
+              variant="outline"
+              className={cn(
+                "mt-0.5 gap-1",
+                c.pass ? "border-bull/40 bg-bull/10 text-bull" : "border-bear/40 bg-bear/10 text-bear"
+              )}
             >
+              {c.pass ? <CheckCircle2 className="size-3" /> : <XCircle className="size-3" />}
               {c.pass ? "PASS" : "FAIL"}
-            </span>
+            </Badge>
             <div className="min-w-0">
               <div className="text-sm">{`Test ${i + 1}  ${c.name}`}</div>
               {c.detail && (
-                <div className="text-xs text-muted font-mono whitespace-pre-wrap break-words mt-0.5">
+                <div className="mt-0.5 whitespace-pre-wrap break-words font-mono text-xs text-muted-foreground">
                   {c.detail}
                 </div>
               )}
             </div>
           </div>
         ))}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -399,54 +423,66 @@ function PairCard({ pair, result, mutate }) {
     });
 
   return (
-    <div className="rounded-lg border border-border bg-panel overflow-hidden">
+    <Card className="overflow-hidden">
       {/* header */}
-      <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-border">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
         <input
           value={pair.name}
           onChange={(e) => set("name", e.target.value)}
-          className="bg-transparent font-semibold text-base w-36 outline-none focus:text-accent"
+          className="w-36 bg-transparent text-base font-semibold outline-none focus:text-primary"
+          aria-label="Pair name"
         />
         {dir && (
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${dir === "bullish" ? "bg-bull/15 text-bull" : "bg-bear/15 text-bear"}`}>
+          <Badge
+            variant="outline"
+            className={cn(
+              dir === "bullish" ? "border-bull/40 bg-bull/10 text-bull" : "border-bear/40 bg-bear/10 text-bear"
+            )}
+          >
             {dir.toUpperCase()} ENGULF
-          </span>
+          </Badge>
         )}
         {result?.last && (
-          <span className="text-xs text-muted font-mono tnum">last {fmt(result.last.close)}</span>
+          <span className="font-mono text-xs text-muted-foreground tnum">last {fmt(result.last.close)}</span>
         )}
-        <div className="ml-auto flex items-center gap-2">
-          <a href={tvLink(pair)} target="_blank" rel="noreferrer" className="text-xs text-accent hover:underline">
-            TradingView ↗
-          </a>
-          <button onClick={toggleChart} className="text-xs px-2 py-1 rounded border border-border hover:bg-panel/60">
-            {showChart ? "Hide chart" : "Chart"}
-          </button>
-          <button
+        <div className="ml-auto flex items-center gap-1">
+          <Button variant="ghost" size="sm" asChild>
+            <a href={tvLink(pair)} target="_blank" rel="noreferrer">
+              <ExternalLink />
+              <span className="hidden sm:inline">TradingView</span>
+            </a>
+          </Button>
+          <Button variant="ghost" size="sm" onClick={toggleChart}>
+            <BarChart3 />
+            <span className="hidden sm:inline">{showChart ? "Hide chart" : "Chart"}</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-bear/80 hover:bg-bear/10 hover:text-bear"
             onClick={() => mutate((s) => (s.pairs = s.pairs.filter((x) => x.id !== pair.id)))}
-            className="text-xs text-bear/80 hover:text-bear px-1"
             title="Delete pair"
           >
-            Delete
-          </button>
+            <Trash2 />
+            <span className="sr-only">Delete pair</span>
+          </Button>
         </div>
       </div>
 
       {/* pair fields */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-4 pt-3 text-xs">
+      <div className="grid grid-cols-1 gap-3 px-4 pt-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Exchange" value={pair.exchange} onChange={(v) => set("exchange", v)} />
         <Field label="ccxt symbol" value={pair.symbol} onChange={(v) => set("symbol", v)} mono />
         <Field label="TradingView" value={pair.tradingview || ""} onChange={(v) => set("tradingview", v)} mono placeholder="auto" />
         <Field label="Timeframe" value={pair.timeframe || ""} onChange={(v) => set("timeframe", v || null)} placeholder="default" />
       </div>
       {/* trade params (forex lot sizing) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-4 pt-3 pb-3 border-b border-border text-xs">
-        <label className="block">
-          <span className="text-[10px] uppercase tracking-wide text-muted">Market</span>
-          <select
+      <div className="grid grid-cols-1 gap-3 border-b border-border px-4 pb-3 pt-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
+        <div className="flex flex-col gap-1">
+          <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Market</Label>
+          <Select
             value={pair.market || "custom"}
-            onChange={(e) => {
-              const m = e.target.value;
+            onValueChange={(m) => {
               mutate((s) => {
                 const p = s.pairs.find((x) => x.id === pair.id);
                 p.market = m;
@@ -456,15 +492,21 @@ function PairCard({ pair, result, mutate }) {
                 }
               });
             }}
-            className="mt-1 w-full bg-panel2 border border-border rounded-md px-2 py-1.5 outline-none focus:border-accent/60"
           >
-            <option value="crypto">Crypto</option>
-            <option value="gold">Gold (XAU)</option>
-            <option value="forex">Forex</option>
-            <option value="forexJPY">Forex (JPY)</option>
-            <option value="custom">Custom</option>
-          </select>
-        </label>
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="crypto">Crypto</SelectItem>
+                <SelectItem value="gold">Gold (XAU)</SelectItem>
+                <SelectItem value="forex">Forex</SelectItem>
+                <SelectItem value="forexJPY">Forex (JPY)</SelectItem>
+                <SelectItem value="custom">Custom</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
         <Field
           label="Leverage (x)"
           value={pair.leverage ?? ""}
@@ -487,23 +529,25 @@ function PairCard({ pair, result, mutate }) {
 
       {/* chart */}
       {showChart && (
-        <div className="px-4 py-3 border-b border-border bg-panel2">
+        <div className="border-b border-border bg-popover px-4 py-3">
           {loadingChart ? (
-            <div className="text-xs text-muted py-8 text-center">Loading candles…</div>
+            <div className="py-8 text-center text-xs text-muted-foreground">Loading candles…</div>
           ) : svg ? (
             <div className="w-full overflow-hidden rounded-md" dangerouslySetInnerHTML={{ __html: svg }} />
           ) : (
-            <div className="text-xs text-bear py-8 text-center">Could not load candles — check the symbol/exchange.</div>
+            <div className="py-8 text-center text-xs text-bear">
+              Could not load candles — check the symbol/exchange.
+            </div>
           )}
         </div>
       )}
 
       {/* levels */}
       <div className="px-4 py-3">
-        <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted">Levels</span>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Levels</span>
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted">
+            <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
               Offset
               <input
                 type="number"
@@ -511,28 +555,32 @@ function PairCard({ pair, result, mutate }) {
                 value={pair.levelOffset ?? ""}
                 placeholder="0"
                 onChange={(e) => set("levelOffset", e.target.value === "" ? "" : parseFloat(e.target.value))}
-                className="w-20 bg-panel2 border border-border rounded px-2 py-1 font-mono tnum text-xs outline-none focus:border-accent/60"
+                className="w-20 rounded border border-border bg-popover px-2 py-1 font-mono text-xs outline-none focus:border-primary/60 tnum"
                 title="Shift every level by this price (e.g. -5.79 to align your broker's gold with Binance)"
               />
             </label>
-            <button
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-gold/30 bg-gold/10 text-gold hover:bg-gold/20 hover:text-gold"
               onClick={() => mutate((s) => s.pairs.find((x) => x.id === pair.id).levels.push({ id: uid(), low: 0, high: 0 }))}
-              className="text-xs px-2.5 py-1 rounded-md bg-gold/15 text-gold border border-gold/30 hover:bg-gold/25 transition"
             >
-              + Add level
-            </button>
+              <Plus />
+              Add level
+            </Button>
           </div>
         </div>
         {pair.levelOffset ? (
-          <div className="text-[10px] text-muted mb-2 font-mono">
-            Watching levels shifted by {pair.levelOffset > 0 ? "+" : ""}{pair.levelOffset} (broker → feed)
+          <div className="mb-2 font-mono text-[10px] text-muted-foreground">
+            Watching levels shifted by {pair.levelOffset > 0 ? "+" : ""}
+            {pair.levelOffset} (broker → feed)
           </div>
         ) : null}
 
         {pair.levels.length === 0 ? (
-          <div className="text-xs text-muted py-3">No levels yet. Add a zone to watch.</div>
+          <div className="py-3 text-xs text-muted-foreground">No levels yet. Add a zone to watch.</div>
         ) : (
-          <div className="space-y-1.5">
+          <div className="flex flex-col gap-1.5">
             {pair.levels.map((lvl) => (
               <LevelRow
                 key={lvl.id}
@@ -557,21 +605,21 @@ function PairCard({ pair, result, mutate }) {
           </div>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 
 function Field({ label, value, onChange, mono, placeholder }) {
   return (
-    <label className="block">
-      <span className="text-[10px] uppercase tracking-wide text-muted">{label}</span>
-      <input
+    <div className="flex flex-col gap-1">
+      <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</Label>
+      <Input
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className={`mt-1 w-full bg-panel2 border border-border rounded-md px-2 py-1.5 outline-none focus:border-accent/60 ${mono ? "font-mono" : ""}`}
+        className={cn("h-8 text-xs", mono && "font-mono")}
       />
-    </label>
+    </div>
   );
 }
 
@@ -582,63 +630,72 @@ function LevelRow({ lvl, state, onChange, onDelete, offset }) {
   const off = Number(offset) || 0;
   return (
     <div
-      className={`flex items-center gap-2 rounded-md border px-2 py-1.5 ${
-        touched ? "border-gold/60 bg-gold/10" : "border-border bg-panel2"
-      }`}
+      className={cn(
+        "flex flex-wrap items-center gap-2 rounded-md border px-2 py-1.5",
+        touched ? "border-gold/60 bg-gold/10" : "border-border bg-popover"
+      )}
     >
-      <span className="h-2 w-2 rounded-full bg-gold/70 shrink-0" />
-      <NumberInput value={lvl.low} onChange={(v) => onChange("low", v)} />
-      <span className="text-muted text-xs">→</span>
-      <NumberInput value={lvl.high} onChange={(v) => onChange("high", v)} />
+      <span className="size-2 shrink-0 rounded-full bg-gold/70" />
+      <NumberInput value={lvl.low} onChange={(v) => onChange("low", v)} label="Level low" />
+      <span className="text-xs text-muted-foreground">→</span>
+      <NumberInput value={lvl.high} onChange={(v) => onChange("high", v)} label="Level high" />
       {off !== 0 && (
-        <span className="text-[10px] font-mono text-gold/80 whitespace-nowrap" title="Effective watched zone after offset">
+        <span className="whitespace-nowrap font-mono text-[10px] text-gold/80" title="Effective watched zone after offset">
           ⇒ {fmt(Math.min(lvl.low, lvl.high) + off)}–{fmt(Math.max(lvl.low, lvl.high) + off)}
         </span>
       )}
       <div className="ml-auto flex items-center gap-2">
         {state && (
-          <span className={`text-[10px] font-mono ${touched ? "text-gold" : "text-muted"}`}>
+          <span className={cn("font-mono text-[10px]", touched ? "text-gold" : "text-muted-foreground")}>
             {touched ? "TOUCHED" : gap === 0 ? "inside" : `gap ${fmt(gap)}`}
           </span>
         )}
-        <button onClick={onDelete} className="text-bear/70 hover:text-bear text-xs px-1" title="Delete level">
-          ✕
-        </button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6 text-bear/70 hover:bg-bear/10 hover:text-bear"
+          onClick={onDelete}
+          title="Delete level"
+        >
+          <X />
+          <span className="sr-only">Delete level</span>
+        </Button>
       </div>
     </div>
   );
 }
 
-function NumberInput({ value, onChange }) {
+function NumberInput({ value, onChange, label }) {
   return (
     <input
       type="number"
       step="any"
       value={value}
       onChange={(e) => onChange(e.target.value === "" ? "" : parseFloat(e.target.value))}
-      className="w-24 bg-bg/60 border border-border rounded px-2 py-1 font-mono tnum text-sm outline-none focus:border-accent/60"
+      className="w-24 rounded border border-border bg-background/60 px-2 py-1 font-mono text-sm outline-none focus:border-primary/60 tnum"
+      aria-label={label}
     />
   );
 }
 
 function RiskField({ label, value, onChange, placeholder }) {
   return (
-    <label className="block">
-      <span className="text-[10px] uppercase tracking-wide text-muted">{label}</span>
-      <input
+    <div className="flex flex-col gap-1">
+      <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</Label>
+      <Input
         type="number"
         step="any"
         value={value ?? ""}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value === "" ? "" : parseFloat(e.target.value))}
-        className="mt-1 w-full bg-panel2 border border-border rounded-md px-2 py-1.5 font-mono outline-none focus:border-accent/60"
+        className="h-8 font-mono text-xs"
       />
-    </label>
+    </div>
   );
 }
 
 /* ---------- settings ---------- */
-function Settings({ settings, mutate }) {
+function SettingsPanel({ settings, mutate }) {
   const setS = (field, value) => mutate((s) => (s.settings[field] = value));
   const setEmail = (field, value) => mutate((s) => (s.settings.email[field] = value));
   const setTelegram = (field, value) => mutate((s) => {
@@ -673,11 +730,11 @@ function Settings({ settings, mutate }) {
   async function sendTelegramTest() {
     setTelegramTesting(true);
     try {
-      const res = await fetch("/api/test-telegram", { 
+      const res = await fetch("/api/test-telegram", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          message: "🚀 Test message from Engulfing Alerts Dashboard\n\nTelegram integration is working correctly!" 
+        body: JSON.stringify({
+          message: "🚀 Test message from Engulfing Alerts Dashboard\n\nTelegram integration is working correctly!"
         })
       }).then((r) => r.json());
       if (res.success) toast("Test message sent to Telegram successfully", "success");
@@ -692,10 +749,10 @@ function Settings({ settings, mutate }) {
   async function sendTelegramChartTest() {
     setTelegramTesting(true);
     try {
-      const res = await fetch("/api/test-telegram", { 
+      const res = await fetch("/api/test-telegram", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           testChart: true
         })
       }).then((r) => r.json());
@@ -709,160 +766,156 @@ function Settings({ settings, mutate }) {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-panel p-4 space-y-4">
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Settings</h2>
-
-      <div className="grid grid-cols-2 gap-3 text-xs">
-        <Select
-          label="Timeframe"
-          value={settings.timeframe || "15m"}
-          onChange={(v) => setS("timeframe", v)}
-          options={["1m", "5m", "15m", "30m", "1h", "4h", "1d"]}
-        />
-        <label className="block">
-          <span className="text-[10px] uppercase tracking-wide text-muted">Auto-scan interval (sec)</span>
-          <input
-            type="number"
-            value={settings.pollIntervalSeconds || 60}
-            onChange={(e) => setS("pollIntervalSeconds", parseInt(e.target.value || "60", 10))}
-            className="mt-1 w-full bg-panel2 border border-border rounded-md px-2 py-1.5 font-mono outline-none focus:border-accent/60"
-          />
-        </label>
-      </div>
-
-      <MultiSelectModes
-        label="Touch mode (select one or more)"
-        values={settings.touchModes || [settings.touchMode || "range"]}
-        onChange={(v) => setS("touchModes", v)}
-        options={[
-          { value: "range", label: "Range", hint: "wick touches the zone" },
-          { value: "body", label: "Body", hint: "candle body touches the zone" },
-          { value: "close", label: "Close", hint: "candle closes inside the zone" },
-        ]}
-      />
-
-      <div className="pt-2 border-t border-border space-y-3 text-xs">
-        <h3 className="text-[10px] uppercase tracking-wide text-muted">Email alerts</h3>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="SMTP server" value={email.smtpServer || ""} onChange={(v) => setEmail("smtpServer", v)} mono />
-          <Field label="Port" value={email.smtpPort || ""} onChange={(v) => setEmail("smtpPort", parseInt(v || "587", 10))} mono />
-        </div>
-        <Field label="Sender" value={email.sender || ""} onChange={(v) => setEmail("sender", v)} mono />
-        <Field
-          label="App password"
-          value={email.password || ""}
-          onChange={(v) => setEmail("password", v)}
-          mono
-        />
-        <Field
-          label="Recipients (comma separated)"
-          value={(email.recipients || []).join(", ")}
-          onChange={(v) => setEmail("recipients", v.split(",").map((x) => x.trim()).filter(Boolean))}
-          mono
-        />
-
-        <div className="flex items-center gap-2 pt-1">
-          <button
-            onClick={sendTest}
-            disabled={testing}
-            className="text-xs px-3 py-1.5 rounded-md bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 transition disabled:opacity-50"
-          >
-            {testing ? "Sending…" : "Send test email"}
-          </button>
-        </div>
-      </div>
-
-      <div className="pt-2 border-t border-border space-y-3 text-xs">
-        <h3 className="text-[10px] uppercase tracking-wide text-muted">Telegram alerts</h3>
-        <Field 
-          label="Bot Token" 
-          value={telegram.botToken || ""} 
-          onChange={(v) => setTelegram("botToken", v)} 
-          mono 
-          placeholder="Get from @BotFather on Telegram"
-        />
-        <Field 
-          label="Chat ID" 
-          value={telegram.chatId || ""} 
-          onChange={(v) => setTelegram("chatId", v)} 
-          mono 
-          placeholder="Your chat ID or group chat ID"
-        />
-        
-        <div className="flex items-center gap-2 pt-1">
-          <button
-            onClick={sendTelegramTest}
-            disabled={telegramTesting}
-            className="text-xs px-3 py-1.5 rounded-md bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 transition disabled:opacity-50"
-          >
-            {telegramTesting ? "Sending…" : "Send test message"}
-          </button>
-          <button
-            onClick={sendTelegramChartTest}
-            disabled={telegramTesting}
-            className="text-xs px-3 py-1.5 rounded-md bg-bull/15 text-bull border border-bull/30 hover:bg-bull/25 transition disabled:opacity-50"
-          >
-            {telegramTesting ? "Sending…" : "Test chart image"}
-          </button>
-        </div>
-        
-        <div className="text-[11px] text-muted bg-panel2 border border-border rounded-md p-2 space-y-1">
-          <p><strong>Setup Instructions:</strong></p>
-          <p>1. Create a bot by messaging @BotFather on Telegram</p>
-          <p>2. Copy the bot token and paste above</p>
-          <p>3. Start a chat with your bot or add it to a group</p>
-          <p>4. Get your Chat ID from @userinfobot</p>
-          <p>5. Test the connection using the button above</p>
-        </div>
-      </div>
-
-      <div className="pt-2 border-t border-border space-y-3 text-xs">
-        <label className="flex items-center justify-between cursor-pointer select-none">
-          <h3 className="text-[10px] uppercase tracking-wide text-muted">Risk &amp; position sizing</h3>
-          <span className="flex items-center gap-2 text-[11px] text-muted">
-            <input
-              type="checkbox"
-              checked={!!risk.enabled}
-              onChange={(e) => setRisk("enabled", e.target.checked)}
-              className="accent-accent"
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Settings
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
+          <div className="flex flex-col gap-1">
+            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Timeframe</Label>
+            <Select value={settings.timeframe || "15m"} onValueChange={(v) => setS("timeframe", v)}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {["1m", "5m", "15m", "30m", "1h", "4h", "1d"].map((o) => (
+                    <SelectItem key={o} value={o}>
+                      {o}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              Auto-scan interval (sec)
+            </Label>
+            <Input
+              type="number"
+              value={settings.pollIntervalSeconds || 60}
+              onChange={(e) => setS("pollIntervalSeconds", parseInt(e.target.value || "60", 10))}
+              className="h-8 font-mono text-xs"
             />
-            include in alerts
-          </span>
-        </label>
+          </div>
+        </div>
 
-        {risk.enabled && (
-          <>
-            <div className="grid grid-cols-2 gap-3">
-              <RiskField label="Account size" value={risk.accountSize} onChange={(v) => setRisk("accountSize", v)} placeholder="1000" />
-              <RiskField label="Risk % per trade" value={risk.riskPercent} onChange={(v) => setRisk("riskPercent", v)} placeholder="1" />
-            </div>
-            <p className="text-[10px] text-muted leading-relaxed">
-              Lot size is calculated so hitting the stop loses your risk %. SL sits just past the engulfing candle; TP uses a 1:2 reward:risk.
-              <span className="text-accent"> Leverage is set per pair</span> (in each pair card).
-            </p>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
+        <MultiSelectModes
+          label="Touch mode (select one or more)"
+          values={settings.touchModes || [settings.touchMode || "range"]}
+          onChange={(v) => setS("touchModes", v)}
+          options={[
+            { value: "range", label: "Range", hint: "wick touches the zone" },
+            { value: "body", label: "Body", hint: "candle body touches the zone" },
+            { value: "close", label: "Close", hint: "candle closes inside the zone" },
+          ]}
+        />
 
-function Select({ label, value, onChange, options }) {
-  return (
-    <label className="block">
-      <span className="text-[10px] uppercase tracking-wide text-muted">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full bg-panel2 border border-border rounded-md px-2 py-1.5 outline-none focus:border-accent/60"
-      >
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {o}
-          </option>
-        ))}
-      </select>
-    </label>
+        <Separator />
+
+        <div className="flex flex-col gap-3 text-xs">
+          <h3 className="text-[10px] uppercase tracking-wide text-muted-foreground">Email alerts</h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="SMTP server" value={email.smtpServer || ""} onChange={(v) => setEmail("smtpServer", v)} mono />
+            <Field label="Port" value={email.smtpPort || ""} onChange={(v) => setEmail("smtpPort", parseInt(v || "587", 10))} mono />
+          </div>
+          <Field label="Sender" value={email.sender || ""} onChange={(v) => setEmail("sender", v)} mono />
+          <Field label="App password" value={email.password || ""} onChange={(v) => setEmail("password", v)} mono />
+          <Field
+            label="Recipients (comma separated)"
+            value={(email.recipients || []).join(", ")}
+            onChange={(v) => setEmail("recipients", v.split(",").map((x) => x.trim()).filter(Boolean))}
+            mono
+          />
+          <div className="flex items-center gap-2 pt-1">
+            <Button variant="outline" size="sm" onClick={sendTest} disabled={testing}>
+              {testing ? "Sending…" : "Send test email"}
+            </Button>
+          </div>
+        </div>
+
+        <Separator />
+
+        <div className="flex flex-col gap-3 text-xs">
+          <h3 className="text-[10px] uppercase tracking-wide text-muted-foreground">Telegram alerts</h3>
+          <Field
+            label="Bot Token"
+            value={telegram.botToken || ""}
+            onChange={(v) => setTelegram("botToken", v)}
+            mono
+            placeholder="Get from @BotFather on Telegram"
+          />
+          <Field
+            label="Chat ID"
+            value={telegram.chatId || ""}
+            onChange={(v) => setTelegram("chatId", v)}
+            mono
+            placeholder="Your chat ID or group chat ID"
+          />
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Button variant="outline" size="sm" onClick={sendTelegramTest} disabled={telegramTesting}>
+              {telegramTesting ? "Sending…" : "Send test message"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-bull/30 bg-bull/10 text-bull hover:bg-bull/20 hover:text-bull"
+              onClick={sendTelegramChartTest}
+              disabled={telegramTesting}
+            >
+              {telegramTesting ? "Sending…" : "Test chart image"}
+            </Button>
+          </div>
+
+          <Alert>
+            <AlertDescription className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+              <p className="font-semibold text-foreground">Setup Instructions:</p>
+              <p>1. Create a bot by messaging @BotFather on Telegram</p>
+              <p>2. Copy the bot token and paste above</p>
+              <p>3. Start a chat with your bot or add it to a group</p>
+              <p>4. Get your Chat ID from @userinfobot</p>
+              <p>5. Test the connection using the button above</p>
+            </AlertDescription>
+          </Alert>
+        </div>
+
+        <Separator />
+
+        <div className="flex flex-col gap-3 text-xs">
+          <div className="flex items-center justify-between">
+            <h3 className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              Risk &amp; position sizing
+            </h3>
+            <label className="flex cursor-pointer select-none items-center gap-2 text-[11px] text-muted-foreground">
+              <Switch
+                checked={!!risk.enabled}
+                onCheckedChange={(v) => setRisk("enabled", v)}
+                aria-label="Include risk sizing in alerts"
+              />
+              include in alerts
+            </label>
+          </div>
+
+          {risk.enabled && (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <RiskField label="Account size" value={risk.accountSize} onChange={(v) => setRisk("accountSize", v)} placeholder="1000" />
+                <RiskField label="Risk % per trade" value={risk.riskPercent} onChange={(v) => setRisk("riskPercent", v)} placeholder="1" />
+              </div>
+              <p className="text-[10px] leading-relaxed text-muted-foreground">
+                Lot size is calculated so hitting the stop loses your risk %. SL sits just past the engulfing candle; TP uses a 1:2 reward:risk.
+                <span className="text-primary"> Leverage is set per pair</span> (in each pair card).
+              </p>
+            </>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -879,37 +932,35 @@ function MultiSelectModes({ label, values, onChange, options }) {
   };
   return (
     <div>
-      <span className="text-[10px] uppercase tracking-wide text-muted">{label}</span>
+      <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</Label>
       <div className="mt-1 grid grid-cols-3 gap-1.5">
         {options.map((o) => {
           const on = selected.includes(o.value);
           return (
-            <button
+            <label
               key={o.value}
-              type="button"
-              onClick={() => toggle(o.value)}
               title={o.hint}
-              className={`flex items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-xs transition ${
+              className={cn(
+                "flex cursor-pointer items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-xs transition",
                 on
-                  ? "border-accent bg-accent/15 text-accent font-medium"
-                  : "border-border bg-panel2 text-muted hover:border-accent/40"
-              }`}
+                  ? "border-primary bg-primary/15 font-medium text-primary"
+                  : "border-border bg-popover text-muted-foreground hover:border-primary/40"
+              )}
             >
-              <span
-                className={`h-3 w-3 rounded-[4px] border flex items-center justify-center text-[9px] ${
-                  on ? "border-accent bg-accent text-white" : "border-muted/50"
-                }`}
-              >
-                {on ? "✓" : ""}
-              </span>
+              <Checkbox
+                checked={on}
+                onCheckedChange={() => toggle(o.value)}
+                className="size-3.5"
+                aria-label={o.label}
+              />
               {o.label}
-            </button>
+            </label>
           );
         })}
       </div>
-      <p className="mt-1 text-[10px] text-muted">
+      <p className="mt-1 text-[10px] text-muted-foreground">
         Alerts when a candle matches {selected.length > 1 ? "any of: " : ""}
-        <span className="text-ink">{selected.join(", ")}</span>
+        <span className="text-foreground">{selected.join(", ")}</span>
       </p>
     </div>
   );
@@ -918,45 +969,77 @@ function MultiSelectModes({ label, values, onChange, options }) {
 /* ---------- signal log ---------- */
 function SignalLog({ signals }) {
   return (
-    <div className="rounded-lg border border-border bg-panel p-4">
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted mb-3">Signals</h2>
-      {signals.length === 0 ? (
-        <p className="text-xs text-muted">No signals yet. They appear here when an engulfing candle hits a level.</p>
-      ) : (
-        <div className="space-y-2">
-          {signals.map((sig, i) => (
-            <a
-              key={i}
-              href={sig.link}
-              target="_blank"
-              rel="noreferrer"
-              className="block rounded-md border border-border bg-panel2 px-3 py-2 hover:border-accent/40 transition"
-            >
-              <div className="flex items-center gap-2">
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${sig.direction === "bullish" ? "bg-bull/15 text-bull" : "bg-bear/15 text-bear"}`}>
-                  {sig.direction.toUpperCase()}
-                </span>
-                <span className="text-sm font-medium">{sig.pair}</span>
-                <span className="ml-auto text-[10px] text-muted">{new Date(sig.at).toLocaleTimeString()}</span>
-              </div>
-              <div className="text-xs text-muted font-mono tnum mt-1">
-                {fmt(sig.low)} → {fmt(sig.high)}
-                {sig.emailed === false && <span className="text-bear ml-2">email failed</span>}
-              </div>
-              {sig.position && (
-                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] font-mono tnum border-t border-border pt-2">
-                  <span className="text-muted">Entry <span className="text-ink">{fmt(sig.position.entry)}</span></span>
-                  <span className="text-muted">Lots <span className="text-accent">{sig.position.lots}</span></span>
-                  <span className="text-muted">SL <span className="text-bear">{fmt(sig.position.stop)}</span> <span className="text-muted">({sig.position.slPips}p)</span></span>
-                  <span className="text-muted">TP <span className="text-bull">{fmt(sig.position.tp)}</span> <span className="text-muted">({sig.position.tpPips}p)</span></span>
-                  <span className="text-muted">Margin <span className="text-ink">{fmt(sig.position.margin)}</span></span>
-                  <span className="text-muted">Risk <span className="text-ink">{fmt(sig.position.riskAmount)}</span> → <span className="text-bull">{fmt(sig.position.rewardAmount)}</span></span>
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Signals
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {signals.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No signals yet. They appear here when an engulfing candle hits a level.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {signals.map((sig, i) => (
+              <a
+                key={i}
+                href={sig.link}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-md border border-border bg-popover px-3 py-2 transition hover:border-primary/40"
+              >
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      sig.direction === "bullish"
+                        ? "border-bull/40 bg-bull/10 text-bull"
+                        : "border-bear/40 bg-bear/10 text-bear"
+                    )}
+                  >
+                    {sig.direction.toUpperCase()}
+                  </Badge>
+                  <span className="text-sm font-medium">{sig.pair}</span>
+                  <span className="ml-auto text-[10px] text-muted-foreground">
+                    {new Date(sig.at).toLocaleTimeString()}
+                  </span>
                 </div>
-              )}
-            </a>
-          ))}
-        </div>
-      )}
-    </div>
+                <div className="mt-1 font-mono text-xs text-muted-foreground tnum">
+                  {fmt(sig.low)} → {fmt(sig.high)}
+                  {sig.emailed === false && <span className="ml-2 text-bear">email failed</span>}
+                </div>
+                {sig.position && (
+                  <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 border-t border-border pt-2 font-mono text-[11px] tnum">
+                    <span className="text-muted-foreground">
+                      Entry <span className="text-foreground">{fmt(sig.position.entry)}</span>
+                    </span>
+                    <span className="text-muted-foreground">
+                      Lots <span className="text-primary">{sig.position.lots}</span>
+                    </span>
+                    <span className="text-muted-foreground">
+                      SL <span className="text-bear">{fmt(sig.position.stop)}</span>{" "}
+                      <span className="text-muted-foreground">({sig.position.slPips}p)</span>
+                    </span>
+                    <span className="text-muted-foreground">
+                      TP <span className="text-bull">{fmt(sig.position.tp)}</span>{" "}
+                      <span className="text-muted-foreground">({sig.position.tpPips}p)</span>
+                    </span>
+                    <span className="text-muted-foreground">
+                      Margin <span className="text-foreground">{fmt(sig.position.margin)}</span>
+                    </span>
+                    <span className="text-muted-foreground">
+                      Risk <span className="text-foreground">{fmt(sig.position.riskAmount)}</span> →{" "}
+                      <span className="text-bull">{fmt(sig.position.rewardAmount)}</span>
+                    </span>
+                  </div>
+                )}
+              </a>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
