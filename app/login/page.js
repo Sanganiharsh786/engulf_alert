@@ -1,6 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import { Zap, AlertCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -32,55 +45,54 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <form
-        onSubmit={submit}
-        className="w-full max-w-sm rounded-xl border border-border bg-panel p-6 space-y-5 shadow-2xl"
-      >
-        <div className="text-center space-y-1">
-          <div className="mx-auto h-10 w-10 rounded-lg bg-accent/15 border border-accent/30 flex items-center justify-center text-accent text-lg font-bold">
-            ⚡
+    <div className="min-h-screen flex items-center justify-center bg-background px-4 py-10">
+      <Card className="w-full max-w-sm shadow-2xl">
+        <CardHeader className="items-center text-center">
+          <div className="mx-auto flex size-11 items-center justify-center rounded-lg border border-primary/30 bg-primary/15 text-primary">
+            <Zap className="size-5" />
           </div>
-          <h1 className="text-lg font-bold tracking-tight">Engulfing Alerts</h1>
-          <p className="text-xs text-muted">Sign in to your dashboard</p>
-        </div>
+          <CardTitle className="mt-3 text-lg">Engulfing Alerts</CardTitle>
+          <CardDescription>Sign in to your dashboard</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={submit}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="username">Username</FieldLabel>
+                <Input
+                  id="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  autoFocus
+                  autoComplete="username"
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="password">Password</FieldLabel>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                />
+              </Field>
 
-        <label className="block">
-          <span className="text-[10px] uppercase tracking-wide text-muted">Username</span>
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoFocus
-            autoComplete="username"
-            className="mt-1 w-full bg-panel2 border border-border rounded-md px-3 py-2 outline-none focus:border-accent/60"
-          />
-        </label>
+              {error && (
+                <Alert variant="destructive">
+                  <AlertCircle />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
 
-        <label className="block">
-          <span className="text-[10px] uppercase tracking-wide text-muted">Password</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            className="mt-1 w-full bg-panel2 border border-border rounded-md px-3 py-2 outline-none focus:border-accent/60"
-          />
-        </label>
-
-        {error && (
-          <div className="text-xs text-bear bg-bear/10 border border-bear/30 rounded-md px-3 py-2">
-            {error}
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={busy || !username || !password}
-          className="w-full text-sm px-3 py-2.5 rounded-md bg-accent text-white font-medium hover:brightness-110 transition disabled:opacity-50"
-        >
-          {busy ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
+              <Button type="submit" disabled={busy || !username || !password} className="w-full">
+                {busy && <Spinner data-icon="inline-start" />}
+                {busy ? "Signing in…" : "Sign in"}
+              </Button>
+            </FieldGroup>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }
