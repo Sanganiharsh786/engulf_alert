@@ -4,6 +4,7 @@
 @tailwind components;
 @tailwind utilities;
 
+/* engulf-alert dark trading theme */
 @layer base {
   :root {
     color-scheme: dark;
