@@ -10,7 +10,12 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   try {
     const store = await readStore(user);
-    return NextResponse.json({ ...store, user });
+    // don't ship the full DNA fingerprint library to the browser — just status
+    const { dna, ...rest } = store;
+    const dnaStatus = dna && dna.builtAt
+      ? { builtAt: dna.builtAt, count: (dna.entries || []).length }
+      : null;
+    return NextResponse.json({ ...rest, dna: dnaStatus, user });
   } catch (e) {
     return NextResponse.json({ error: String(e.message || e) }, { status: 500 });
   }

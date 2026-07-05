@@ -50,6 +50,7 @@ export default function Backtest() {
   const [period, setPeriod] = useState("recent"); // "recent" | "today" | "2023" | "2024" | ...
   const [exclFrom, setExclFrom] = useState(""); // "HH:MM" IST — start of excluded window
   const [exclTo, setExclTo] = useState(""); // "HH:MM" IST — end of excluded window
+  const [dnaOn, setDnaOn] = useState(true); // Signal DNA filter (only shown when trades carry DNA data)
   const [showCalendar, setShowCalendar] = useState(false);
   const [selectedTrade, setSelectedTrade] = useState(null);
   const toast = useToast();
@@ -150,16 +151,24 @@ export default function Backtest() {
     [data]
   );
 
-  // trades narrowed by pair + excluded time-of-day window
+  // trades carry DNA fields only when the Signal DNA setting is enabled
+  const hasDna = useMemo(
+    () => !!data && data.trades.some((t) => t.dnaPass !== undefined),
+    [data]
+  );
+  const dnaActive = hasDna && dnaOn;
+
+  // trades narrowed by pair + excluded time-of-day window + DNA filter
   const pairFiltered = useMemo(() => {
     if (!data) return [];
     let rows = pairSel.length
       ? data.trades.filter((t) => pairSel.includes(t.pair))
       : data.trades;
     if (exclActive) rows = rows.filter((t) => !inExcl(t));
+    if (dnaActive) rows = rows.filter((t) => t.dnaPass);
     return rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, pairSel, exclActive, exclFrom, exclTo]);
+  }, [data, pairSel, exclActive, exclFrom, exclTo, dnaActive]);
 
   const months = useMemo(() => summarizeByMonth(pairFiltered), [pairFiltered]);
 
@@ -247,9 +256,10 @@ export default function Backtest() {
       q.set("exclFrom", String(toMin(exclFrom)));
       q.set("exclTo", String(toMin(exclTo)));
     }
+    if (dnaActive) q.set("dna", "1");
     return "/api/backtest/export?" + q.toString();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pairSel, monthSel, daySel, period, exclActive, exclFrom, exclTo]);
+  }, [pairSel, monthSel, daySel, period, exclActive, exclFrom, exclTo, dnaActive]);
 
   const hasActiveFilters =
     pairSel.length > 0 || monthSel || daySel || exclActive || sessionSel.length > 0;
@@ -402,6 +412,30 @@ export default function Backtest() {
             </div>
           )}
 
+          {/* Signal DNA filter (only when trades carry DNA data) */}
+          {data && hasDna && (
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Signal DNA
+              </Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant={dnaOn ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setDnaOn((v) => !v)}
+                  aria-pressed={dnaOn}
+                >
+                  {dnaOn ? "DNA filter on" : "DNA filter off"}
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {dnaOn
+                    ? "showing only trades whose fingerprint matched earlier winners (walk-forward)"
+                    : "showing all trades — toggle to keep only DNA-matched winners"}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* active filter summary + reset */}
           {data && (
             <>
@@ -412,6 +446,7 @@ export default function Backtest() {
                   {daySel && ` · ${daySel}`}
                   {monthSel && !daySel && ` · ${monthLabel(monthSel)}`}
                   {sessionSel.length > 0 && ` · ${sessionSelLabel} session`}
+                  {dnaActive && " · DNA-matched only"}
                 </span>
                 {hasActiveFilters && (
                   <Button variant="ghost" size="sm" onClick={reset}>

@@ -53,7 +53,18 @@ function DirBadge({ direction }) {
   );
 }
 
+function DnaCell({ t }) {
+  if (t.dnaPass === undefined) return null;
+  if (!t.dnaMatches) return <span className="text-muted-foreground">—</span>;
+  return (
+    <span className={cn(t.dnaPass ? "text-gold" : "text-muted-foreground")}>
+      {Math.round(t.dnaSim)}% · {t.dnaRecord}
+    </span>
+  );
+}
+
 export function TradesTable({ trades, onTradeClick }) {
+  const hasDna = trades.some((t) => t.dnaPass !== undefined);
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -73,7 +84,7 @@ export function TradesTable({ trades, onTradeClick }) {
           <Table>
             <TableHeader>
               <TableRow>
-                {["Date/Time IST", "Day", "Session", "Pair", "Dir", "Level", "Entry", "Stop", "TP", "SL pips", "Lots", "Outcome", "Bars", "R"].map((h) => (
+                {["Date/Time IST", "Day", "Session", "Pair", "Dir", "Level", "Entry", "Stop", "TP", "SL pips", "Lots", "Outcome", "Bars", "R", ...(hasDna ? ["DNA"] : [])].map((h) => (
                   <TableHead key={h} className="whitespace-nowrap text-xs">
                     {h}
                   </TableHead>
@@ -115,6 +126,11 @@ export function TradesTable({ trades, onTradeClick }) {
                   >
                     {t.r}
                   </TableCell>
+                  {hasDna && (
+                    <TableCell className="whitespace-nowrap">
+                      <DnaCell t={t} />
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -145,6 +161,11 @@ export function TradesTable({ trades, onTradeClick }) {
               </div>
               <div className="text-xs text-muted-foreground">
                 {t.time} · {t.day} · Level {t.level}
+                {t.dnaPass !== undefined && t.dnaMatches > 0 && (
+                  <span className={cn("ml-1 font-mono", t.dnaPass ? "text-gold" : "")}>
+                    · DNA {Math.round(t.dnaSim)}% · {t.dnaRecord}
+                  </span>
+                )}
               </div>
               <div className="grid grid-cols-3 gap-2 font-mono text-xs tnum">
                 <div>
