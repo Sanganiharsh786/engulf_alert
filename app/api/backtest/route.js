@@ -14,6 +14,7 @@ export async function POST(req) {
     let days = 10;
     let from = null;
     let to = null;
+    let rrRatio = null;
     try {
       const b = await req.json();
       if (b && Number(b.days)) days = Math.min(370, Math.max(1, Number(b.days)));
@@ -21,11 +22,18 @@ export async function POST(req) {
         from = Number(b.from);
         to = Number(b.to);
       }
+      if (b && Number(b.rrRatio)) {
+        rrRatio = Number(b.rrRatio);
+      }
     } catch {
       /* default */
     }
     const store = await readStore(user);
-    const out = await runBacktest(store, from && to ? { from, to } : { days });
+    const opts = from && to ? { from, to } : { days };
+    if (rrRatio !== null) {
+      opts.rrRatio = rrRatio;
+    }
+    const out = await runBacktest(store, opts);
     out.days = days;
     return NextResponse.json(out);
   } catch (e) {

@@ -23,6 +23,7 @@ import { TradesTable } from "@/components/backtest/trades-table";
 import { TradeChartDialog } from "@/components/backtest/trade-chart-dialog";
 import { NewsSection } from "@/components/backtest/news-section";
 import { SessionBreakdown } from "@/components/backtest/session-breakdown";
+import { RRComparison } from "@/components/backtest/rr-comparison";
 import {
   IST_OFFSET_MS,
   SESSIONS,
@@ -53,6 +54,8 @@ export default function Backtest() {
   const [dnaOn, setDnaOn] = useState(true); // Signal DNA filter (only shown when trades carry DNA data)
   const [showCalendar, setShowCalendar] = useState(false);
   const [selectedTrade, setSelectedTrade] = useState(null);
+  const [rrRatio, setRrRatio] = useState(null); // null = use default from config
+  const [compareRR, setCompareRR] = useState(false); // show RR comparison
   const toast = useToast();
 
   const toMin = (hm) => {
@@ -102,6 +105,11 @@ export default function Backtest() {
         body = { days: 180 };
       } else {
         body = yearRange(sel);
+      }
+
+      // Add RR ratio if specified
+      if (rrRatio !== null) {
+        body.rrRatio = rrRatio;
       }
 
       const res = await fetch("/api/backtest", {
@@ -262,7 +270,7 @@ export default function Backtest() {
   }, [pairSel, monthSel, daySel, period, exclActive, exclFrom, exclTo, dnaActive]);
 
   const hasActiveFilters =
-    pairSel.length > 0 || monthSel || daySel || exclActive || sessionSel.length > 0;
+    pairSel.length > 0 || monthSel || daySel || exclActive || sessionSel.length > 0 || rrRatio !== null;
 
   const reset = () => {
     setPairSel([]);
@@ -272,6 +280,8 @@ export default function Backtest() {
     setShowCalendar(false);
     setExclFrom("");
     setExclTo("");
+    setRrRatio(null);
+    setCompareRR(false);
   };
 
   const sessionSelLabel = sessionSel
@@ -436,6 +446,50 @@ export default function Backtest() {
             </div>
           )}
 
+          {/* Risk-Reward Ratio Filter */}
+          {data && (
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Risk-Reward Ratio
+              </Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  value={rrRatio === null ? "default" : String(rrRatio)}
+                  onValueChange={(val) => {
+                    const newRR = val === "default" ? null : Number(val);
+                    setRrRatio(newRR);
+                    run(period);
+                  }}
+                  className="flex-wrap justify-start"
+                >
+                  <ToggleGroupItem value="default">Default</ToggleGroupItem>
+                  <ToggleGroupItem value="1.5">1:1.5</ToggleGroupItem>
+                  <ToggleGroupItem value="2">1:2</ToggleGroupItem>
+                  <ToggleGroupItem value="2.5">1:2.5</ToggleGroupItem>
+                  <ToggleGroupItem value="3">1:3</ToggleGroupItem>
+                  <ToggleGroupItem value="4">1:4</ToggleGroupItem>
+                  <ToggleGroupItem value="5">1:5</ToggleGroupItem>
+                </ToggleGroup>
+                <Button
+                  variant={compareRR ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setCompareRR((v) => !v)}
+                  aria-pressed={compareRR}
+                >
+                  {compareRR ? "Hide Comparison" : "Compare All RR"}
+                </Button>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {rrRatio === null
+                  ? "using default RR from config"
+                  : `using 1:${rrRatio} risk-reward ratio`}
+              </span>
+            </div>
+          )}
+
           {/* active filter summary + reset */}
           {data && (
             <>
@@ -447,6 +501,7 @@ export default function Backtest() {
                   {monthSel && !daySel && ` · ${monthLabel(monthSel)}`}
                   {sessionSel.length > 0 && ` · ${sessionSelLabel} session`}
                   {dnaActive && " · DNA-matched only"}
+                  {rrRatio !== null && ` · RR 1:${rrRatio}`}
                 </span>
                 {hasActiveFilters && (
                   <Button variant="ghost" size="sm" onClick={reset}>
@@ -495,6 +550,22 @@ export default function Backtest() {
             />
             <OverallStat label="Still open" value={totals.open} cls="text-muted-foreground" />
           </div>
+
+          {/* RR Comparison Section */}
+          {compareRR && (
+            <div className="mt-6">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Risk-Reward Comparison · Find the optimal RR for this strategy
+                </span>
+                <Button variant="ghost" size="sm" onClick={() => setCompareRR(false)}>
+                  <X />
+                  Hide
+                </Button>
+              </div>
+              <RRComparison trades={filtered} />
+            </div>
+          )}
 
           {/* session performance breakdown */}
           <div className="mt-6">
