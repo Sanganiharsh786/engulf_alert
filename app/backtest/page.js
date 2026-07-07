@@ -24,6 +24,7 @@ import { TradeChartDialog } from "@/components/backtest/trade-chart-dialog";
 import { NewsSection } from "@/components/backtest/news-section";
 import { SessionBreakdown } from "@/components/backtest/session-breakdown";
 import { RRComparison } from "@/components/backtest/rr-comparison";
+import { HourlyAnalysis } from "@/components/backtest/hourly-analysis";
 import {
   IST_OFFSET_MS,
   SESSIONS,
@@ -48,6 +49,7 @@ export default function Backtest() {
   const [monthSel, setMonthSel] = useState(null); // "YYYY-MM" or null = all months
   const [daySel, setDaySel] = useState(null); // "YYYY-MM-DD" or null = all days
   const [sessionSel, setSessionSel] = useState([]); // session keys, empty = all sessions
+  const [hourSel, setHourSel] = useState([]); // selected hours (0-23), empty = all hours
   const [period, setPeriod] = useState("recent"); // "recent" | "today" | "2023" | "2024" | ...
   const [exclFrom, setExclFrom] = useState(""); // "HH:MM" IST — start of excluded window
   const [exclTo, setExclTo] = useState(""); // "HH:MM" IST — end of excluded window
@@ -91,6 +93,7 @@ export default function Backtest() {
     setMonthSel(null);
     setDaySel(null);
     setSessionSel([]);
+    setHourSel([]);
     setShowCalendar(false);
     try {
       let body;
@@ -187,8 +190,7 @@ export default function Backtest() {
   }, [pairFiltered, monthSel]);
 
   // trades within the selected pair + excl + month + day scope, before the
-  // session filter is applied (so the session breakdown always shows every
-  // session for the current date scope)
+  // session and hour filters are applied
   const dateScoped = useMemo(() => {
     let result = pairFiltered;
     if (monthSel) result = result.filter((t) => t.time.slice(0, 7) === monthSel);
@@ -198,15 +200,37 @@ export default function Backtest() {
 
   const sessions = useMemo(() => summarizeBySession(dateScoped), [dateScoped]);
 
-  const filtered = useMemo(() => {
+  // Apply session filter
+  const sessionFiltered = useMemo(() => {
     if (!sessionSel.length) return dateScoped;
     return dateScoped.filter((t) => sessionSel.includes(sessionOf(t.time)));
   }, [dateScoped, sessionSel]);
+
+  // Apply hour filter
+  const filtered = useMemo(() => {
+    if (!hourSel.length) return sessionFiltered;
+    return sessionFiltered.filter((t) => {
+      const hour = parseInt(t.time.slice(11, 13), 10);
+      return hourSel.includes(hour);
+    });
+  }, [sessionFiltered, hourSel]);
 
   const toggleSession = (key) =>
     setSessionSel((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
     );
+
+  const toggleHour = (hour, forceAdd = null) => {
+    setHourSel((prev) => {
+      if (forceAdd === true) {
+        return prev.includes(hour) ? prev : [...prev, hour];
+      } else if (forceAdd === false) {
+        return prev.filter(h => h !== hour);
+      } else {
+        return prev.includes(hour) ? prev.filter((h) => h !== hour) : [...prev, hour];
+      }
+    });
+  };
 
   const summaries = useMemo(() => summarize(filtered), [filtered]);
 
@@ -270,13 +294,14 @@ export default function Backtest() {
   }, [pairSel, monthSel, daySel, period, exclActive, exclFrom, exclTo, dnaActive]);
 
   const hasActiveFilters =
-    pairSel.length > 0 || monthSel || daySel || exclActive || sessionSel.length > 0 || rrRatio !== null;
+    pairSel.length > 0 || monthSel || daySel || exclActive || sessionSel.length > 0 || hourSel.length > 0 || rrRatio !== null;
 
   const reset = () => {
     setPairSel([]);
     setMonthSel(null);
     setDaySel(null);
     setSessionSel([]);
+    setHourSel([]);
     setShowCalendar(false);
     setExclFrom("");
     setExclTo("");
@@ -500,6 +525,7 @@ export default function Backtest() {
                   {daySel && ` · ${daySel}`}
                   {monthSel && !daySel && ` · ${monthLabel(monthSel)}`}
                   {sessionSel.length > 0 && ` · ${sessionSelLabel} session`}
+                  {hourSel.length > 0 && ` · ${hourSel.length} hours`}
                   {dnaActive && " · DNA-matched only"}
                   {rrRatio !== null && ` · RR 1:${rrRatio}`}
                 </span>
@@ -566,6 +592,22 @@ export default function Backtest() {
               <RRComparison trades={filtered} />
             </div>
           )}
+
+          {/* Hourly Analysis - Best Trading Hours */}
+          <div className="mt-6">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Hourly Performance Analysis · Identify best trading hours
+              </span>
+            </div>
+            <HourlyAnalysis 
+              trades={sessionFiltered} 
+              selectedHours={hourSel}
+              onHourToggle={toggleHour}
+            />
+          </div>
+
+          <Separator className="mt-8" />
 
           {/* session performance breakdown */}
           <div className="mt-6">
