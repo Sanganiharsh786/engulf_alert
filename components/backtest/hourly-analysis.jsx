@@ -12,6 +12,15 @@ import { cn } from "@/lib/utils";
  * Helps traders identify optimal trading hours instead of trading all day
  */
 export function HourlyAnalysis({ trades, selectedHours = [], onHourToggle }) {
+  // Helper functions - defined at component level
+  const formatHour = (h) => {
+    return `${String(h).padStart(2, "0")}:00`;
+  };
+
+  const getHourLabel = (h) => {
+    return `${formatHour(h)}–${formatHour(h + 1)}`;
+  };
+
   const hourlyStats = useMemo(() => {
     // Group trades by hour of day (0-23 in IST)
     const byHour = {};
@@ -95,14 +104,6 @@ export function HourlyAnalysis({ trades, selectedHours = [], onHourToggle }) {
         : `${formatHour(r.start)}–${formatHour(r.end + 1)}`,
     }));
   }, [bestHours]);
-
-  const formatHour = (h) => {
-    return `${String(h).padStart(2, "0")}:00`;
-  };
-
-  const getHourLabel = (h) => {
-    return `${formatHour(h)}–${formatHour(h + 1)}`;
-  };
 
   // Performance level classification
   const getPerformanceLevel = (winRate, signals) => {
