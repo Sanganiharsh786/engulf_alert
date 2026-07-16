@@ -186,7 +186,7 @@ export function TradingViewChart({ trade, rows, signalTs }) {
               position: bullish ? "belowBar" : "aboveBar",
               color: "#3b82f6",
               shape: bullish ? "arrowUp" : "arrowDown",
-              text: `${(trade.direction || "").toUpperCase()} ENGULFING`,
+              text: `${(trade.direction || "").toUpperCase()} ${trade.strategy === "crt" ? "CRT" : "ENGULFING"}`,
               size: 2,
             },
           ]);

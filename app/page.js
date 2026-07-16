@@ -309,9 +309,15 @@ function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onSc
           {pfRunning ? "Checking…" : "Run check"}
         </Button>
         <Button variant="outline" size="sm" asChild>
-          <a href="/backtest" title="Backtest results & Excel export">
+          <a href="/backtest" title="Engulfing backtest results & Excel export">
             <BarChart3 />
             Backtest
+          </a>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <a href="/crt" title="CRT (Candle Range Theory) backtest results">
+            <BarChart3 />
+            CRT Backtest
           </a>
         </Button>
         <Button variant="outline" size="sm" asChild>

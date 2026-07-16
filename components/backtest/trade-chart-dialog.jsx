@@ -109,7 +109,7 @@ export function TradeChartDialog({ trade, onClose }) {
                   : "border-bear/40 bg-bear/10 text-bear"
               }
             >
-              {trade.direction?.toUpperCase()} ENGULFING
+              {trade.direction?.toUpperCase()} {trade.strategy === "crt" ? "CRT" : "ENGULFING"}
             </Badge>
             <Badge
               variant="outline"
