@@ -95,10 +95,19 @@ async function runFvgScan({ dryRun = false, tf = DEFAULT_TF } = {}) {
       newAlerts.push(...pairAlerts);
     }
 
-    // Include candle data and FVG zones for the chart
+    // Include candle data (last 60 candles for chart) and FVG zones
     const candleData = rows.slice(-60).map((r) => ({
       ts: r[0], open: r[1], high: r[2], low: r[3], close: r[4], volume: r[5],
     }));
+
+    // Show all untocuhed FVGs from the visible candle range (last 60)
+    // Filter out: already touched FVGs, and the very latest FVG if it just formed
+    const visibleStart = rows.length > 60 ? rows[rows.length - 60][0] : rows[0][0];
+    const chartFVGs = allFVGs.filter((f) => 
+      f.formedAt >= visibleStart && // formed within visible range
+      !f.touchedAt &&              // not already touched
+      f.formedAt < lastCandle.ts    // not formed by the current forming candle
+    );
 
     scans.push({
       pair: name,
@@ -109,7 +118,7 @@ async function runFvgScan({ dryRun = false, tf = DEFAULT_TF } = {}) {
       candleData,
       freshFVG,
       scannedAt: Date.now(),
-      activeFVGs: freshFVG ? [freshFVG] : [], // Only show the fresh FVG on chart
+      activeFVGs: chartFVGs,
       touchedNow,
       touchedFVGs: pairAlerts,
       alerts: pairAlerts,
