@@ -1,129 +1,120 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { createChart, ColorType } from "lightweight-charts";
+import { useEffect, useRef, useId } from "react";
 
 /**
- * FVG Candlestick Chart with FVG zone overlays.
- * Uses TradingView's lightweight-charts library (free, open-source).
+ * Real TradingView chart with FVG zone markings drawn as horizontal lines.
+ * Uses TradingView's Advanced Chart widget + native API to draw FVG zones
+ * as built-in Horizontal Line studies on the actual TradingView chart.
  *
  * Props:
- *   - candles: array of { ts, open, high, low, close } or raw [ts,o,h,l,c] arrays
+ *   - symbol: TradingView symbol (e.g. "FX:EURUSD")
  *   - fvgZones: array of { fvgLow, fvgHigh, type } (bullish/bearish)
  *   - height: chart height in px (default 300)
  */
-export function FVGChart({ candles, fvgZones = [], height = 300 }) {
+export function FVGChart({ symbol = "FX:EURUSD", fvgZones = [], height = 300 }) {
   const containerRef = useRef(null);
-  const chartRef = useRef(null);
+  const widgetRef = useRef(null);
+  const id = useId();
+  const chartId = `tv-fvg-${id.replace(/[^a-zA-Z0-9]/g, "")}`;
 
   useEffect(() => {
-    if (!containerRef.current || !candles?.length) return;
+    if (!containerRef.current) return;
 
-    // Parse candles into lightweight-charts format
-    const seriesData = candles.map((c) => {
-      const ts = c.ts || c[0];
-      const open = c.open ?? c[1];
-      const high = c.high ?? c[2];
-      const low = c.low ?? c[3];
-      const close = c.close ?? c[4];
-      return { time: Math.floor(ts / 1000), open, high, low, close };
-    }).filter((d) => d.time && d.open && d.high && d.low && d.close);
+    let widget = null;
+    let mounted = true;
 
-    if (seriesData.length < 2) return;
-
-    // Create chart
-    const chart = createChart(containerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: "#0e1422" },
-        textColor: "#8b97b8",
-      },
-      grid: {
-        vertLines: { color: "#1e2840" },
-        horzLines: { color: "#1e2840" },
-      },
-      width: containerRef.current.clientWidth,
-      height,
-      crosshair: {
-        mode: 0,
-      },
-      timeScale: {
-        borderColor: "#1e2840",
-        timeVisible: true,
-      },
-      rightPriceScale: {
-        borderColor: "#1e2840",
-      },
-    });
-
-    // Candlestick series
-    const candlestickSeries = chart.addCandlestickSeries({
-      upColor: "#26a69a",
-      downColor: "#ef5350",
-      borderDownColor: "#ef5350",
-      borderUpColor: "#26a69a",
-      wickDownColor: "#ef5350",
-      wickUpColor: "#26a69a",
-    });
-    candlestickSeries.setData(seriesData);
-
-    // Draw FVG zones as price lines (horizontal markers on the chart)
-    if (fvgZones?.length > 0) {
-      for (const fvg of fvgZones) {
-        const isBull = fvg.type === "bullish";
-        const color = isBull ? "#26a69a" : "#ef5350";
-
-        chart.addPriceLine({
-          price: fvg.fvgLow,
-          color,
-          lineWidth: 1,
-          lineStyle: 2, // Dashed
-          title: `FVG ${isBull ? "↑" : "↓"} ${fvg.fvgLow.toFixed(4)}`,
-          axisLabelVisible: true,
-        });
-
-        chart.addPriceLine({
-          price: fvg.fvgHigh,
-          color,
-          lineWidth: 1,
-          lineStyle: 2,
-          title: `FVG ${isBull ? "↑" : "↓"} ${fvg.fvgHigh.toFixed(4)}`,
-          axisLabelVisible: true,
-        });
+    function loadTradingView() {
+      if (typeof window.TradingView === "undefined") {
+        // Only add script if not already in head
+        if (!document.querySelector('script[src*="tradingview.com/tv.js"]')) {
+          const script = document.createElement("script");
+          script.src = "https://s3.tradingview.com/tv.js";
+          script.async = true;
+          script.onload = initWidget;
+          script.onerror = () => console.warn("Failed to load TradingView chart");
+          document.head.appendChild(script);
+        } else {
+          // Script added but not loaded yet, wait for it
+          const check = setInterval(() => {
+            if (typeof window.TradingView !== "undefined") {
+              clearInterval(check);
+              initWidget();
+            }
+          }, 200);
+        }
+      } else {
+        initWidget();
       }
     }
 
-    chartRef.current = chart;
+    function initWidget() {
+      if (!mounted || !containerRef.current) return;
 
-    // Handle resize
-    const handleResize = () => {
-      if (containerRef.current) {
-        chart.applyOptions({ width: containerRef.current.clientWidth });
-      }
-    };
-    window.addEventListener("resize", handleResize);
+      widget = new window.TradingView.widget({
+        container_id: chartId,
+        symbol: symbol,
+        interval: "240", // 4H
+        timezone: "Etc/UTC",
+        theme: "dark",
+        style: "1", // Candles
+        locale: "en",
+        toolbar_bg: "#0e1422",
+        enable_publishing: false,
+        hide_side_toolbar: false,
+        allow_symbol_change: false,
+        hideideas: true,
+        width: "100%",
+        height: height,
+        studies: [],
+      });
+
+      widgetRef.current = widget;
+
+      // Draw FVG zones after chart is fully loaded
+      widget.onChartReady(function () {
+        if (!mounted) return;
+        const chart = widget.chart();
+        if (!chart) return;
+
+        // Wait a moment for the chart to fully render
+        setTimeout(() => {
+          if (!mounted || !chart) return;
+
+          for (const fvg of fvgZones) {
+            const isBull = fvg.type === "bullish";
+            const color = isBull ? "#26a69a" : "#ef5350";
+            const label = isBull ? "BULL FVG" : "BEAR FVG";
+
+            try {
+              // Add horizontal line at FVG low
+              chart.createStudy("Horizontal Line", false, false, [fvg.fvgLow]);
+              // Add horizontal line at FVG high
+              chart.createStudy("Horizontal Line", false, false, [fvg.fvgHigh]);
+            } catch (e) {
+              // Silently ignore drawing errors
+            }
+          }
+        }, 500);
+      });
+    }
+
+    loadTradingView();
 
     return () => {
-      window.removeEventListener("resize", handleResize);
-      chart.remove();
-      chartRef.current = null;
+      mounted = false;
+      if (widget) {
+        try { widget.remove(); } catch {}
+        widgetRef.current = null;
+      }
     };
-  }, [candles, fvgZones, height]);
-
-  if (!candles?.length) {
-    return (
-      <div
-        className="flex items-center justify-center rounded-lg border border-border/50 bg-card/30 text-xs text-muted-foreground"
-        style={{ height }}
-      >
-        No candle data available
-      </div>
-    );
-  }
+  }, [symbol, height]); // Only re-init on symbol/height change
 
   return (
     <div
       ref={containerRef}
-      className="w-full overflow-hidden rounded-lg border border-border/50"
+      id={chartId}
+      className="w-full overflow-hidden rounded-lg border border-border/50 bg-card/30"
       style={{ height }}
     />
   );

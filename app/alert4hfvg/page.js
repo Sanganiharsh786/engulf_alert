@@ -6,7 +6,6 @@ import {
   Activity,
   AlertTriangle,
   ArrowLeft,
-  BarChart3,
   Bell,
   CheckCircle2,
   ChevronDown,
@@ -134,7 +133,7 @@ function FvgZoneRow({ fvg, index }) {
 /* ─── Pair Card ─── */
 function PairCard({ pair, scan, candleData }) {
   const s = pairStyle(pair);
-  const [showChart, setShowChart] = useState(false);
+  const [expandedChart, setExpandedChart] = useState(false);
   const freshFVG = scan?.freshFVG;
   const activeFVGs = scan?.activeFVGs || [];
   const price = scan?.currentPrice;
@@ -186,29 +185,25 @@ function PairCard({ pair, scan, candleData }) {
         </div>
       </div>
 
-      {/* Chart with FVG zone markings */}
+      {/* FVG Chart — REAL TradingView chart with FVG zone lines */}
       <div className="border-b border-border/50">
-        <button
-          onClick={() => setShowChart(!showChart)}
-          className="flex w-full items-center justify-between px-4 py-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground transition"
-        >
-          <span className="flex items-center gap-1.5">
-            <BarChart3 className="size-3" />
-            {showChart ? "Hide chart" : "FVG Chart"}
-          </span>
-          {showChart ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
-        </button>
-        {showChart && candleData && (
-          <div className="px-2 pb-3">
-            <FVGChart
-              candles={candleData}
-              fvgZones={activeFVGs}
-              height={300}
-            />
-          </div>
-        )}
-        {showChart && scan?.tvSymbol && (
-          <div className="px-2 pb-2 text-center">
+        <div className="px-3 pt-3">
+          <FVGChart
+            key={lastScan || scan?.scannedAt || Date.now()}
+            symbol={scan?.tvSymbol || "FX:EURUSD"}
+            fvgZones={activeFVGs}
+            height={expandedChart ? 320 : 180}
+          />
+        </div>
+        <div className="flex items-center justify-between px-3 pb-2 pt-1.5">
+          <button
+            onClick={() => setExpandedChart(!expandedChart)}
+            className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition"
+          >
+            {expandedChart ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+            {expandedChart ? "Collapse" : "Expand chart"}
+          </button>
+          {scan?.tvSymbol && (
             <a
               href={`https://www.tradingview.com/chart/?symbol=${scan.tvSymbol}`}
               target="_blank"
@@ -216,10 +211,10 @@ function PairCard({ pair, scan, candleData }) {
               className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition"
             >
               <ExternalLink className="size-3" />
-              Open in TradingView
+              Open in TV
             </a>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Body */}
@@ -258,18 +253,9 @@ function PairCard({ pair, scan, candleData }) {
         )}
 
         {/* Links */}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {scan?.tvSymbol && (
-            <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1.5" asChild>
-              <a href={`https://www.tradingview.com/chart/?symbol=${scan.tvSymbol}`} target="_blank" rel="noreferrer">
-                <ExternalLink className="size-3" /> TradingView
-              </a>
-            </Button>
-          )}
-          {scan?.status === "error" && (
-            <span className="text-[10px] text-bear/80">{scan.error}</span>
-          )}
-        </div>
+        {!scan?.tvSymbol && scan?.status === "error" && (
+          <span className="text-[10px] text-bear/80">{scan.error}</span>
+        )}
       </CardContent>
     </Card>
   );
