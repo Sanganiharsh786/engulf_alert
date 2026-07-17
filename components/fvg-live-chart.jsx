@@ -10,11 +10,17 @@ import { cn } from "@/lib/utils";
  * candle data + FVG zones into the chart — same visual style as the
  * dashboard's LiveChart but tailored for forex FVG pairs via Twelve Data.
  *
+ * FVG zones are rendered as real filled boxes (series primitives) that are
+ * anchored to the gap's time range and extend to the right edge, updating
+ * live on every poll.
+ *
  * Props:
  *   - pair: "XAU/USD" | "GBP/USD"
  *   - tf: timeframe string (default "4h")
  *   - refreshMs: poll interval (default 15_000)
  *   - height: chart height in px (default 380)
+ *   - onFvgs: optional callback(fvgZones[]) fired on each poll with the
+ *             active FVG zones so parent cards can show live values.
  */
 
 const REFRESH_MS = 15_000;
@@ -37,17 +43,139 @@ function toVolume(r) {
   };
 }
 
-export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height = 380 }) {
+// Normalise the various FVG shapes coming from the API into one flat zone.
+function normalizeFvg(fvg, { fresh = false } = {}) {
+  if (!fvg || fvg.fvgLow == null || fvg.fvgHigh == null) return null;
+  const low = Number(fvg.fvgLow);
+  const high = Number(fvg.fvgHigh);
+  if (!Number.isFinite(low) || !Number.isFinite(high)) return null;
+  // Times arrive in ms; the chart uses seconds.
+  const startMs = fvg.candle1?.ts ?? fvg.formedAt ?? null;
+  const formedMs = fvg.formedAt ?? fvg.candle3?.ts ?? startMs;
+  return {
+    type: fvg.type === "bearish" ? "bearish" : "bullish",
+    low: Math.min(low, high),
+    high: Math.max(low, high),
+    startTime: startMs != null ? Math.floor(startMs / 1000) : null,
+    formedTime: formedMs != null ? Math.floor(formedMs / 1000) : null,
+    fresh,
+  };
+}
+
+// ── FVG box primitive (lightweight-charts v4 series primitive) ───────
+class FVGRenderer {
+  constructor(source) {
+    this._source = source;
+  }
+  draw(target) {
+    const src = this._source;
+    const chart = src._chart;
+    const series = src._series;
+    if (!chart || !series || !src._zones?.length) return;
+    const timeScale = chart.timeScale();
+
+    target.useBitmapCoordinateSpace((scope) => {
+      const ctx = scope.context;
+      const hRatio = scope.horizontalPixelRatio;
+      const vRatio = scope.verticalPixelRatio;
+      const rightEdge = scope.bitmapSize.width;
+
+      for (const z of src._zones) {
+        const yHigh = series.priceToCoordinate(z.high);
+        const yLow = series.priceToCoordinate(z.low);
+        if (yHigh == null || yLow == null) continue;
+
+        let x1 = z.startTime != null ? timeScale.timeToCoordinate(z.startTime) : null;
+        if (x1 == null && z.formedTime != null) x1 = timeScale.timeToCoordinate(z.formedTime);
+        const left = (x1 != null ? Math.max(0, x1) : 0) * hRatio;
+
+        const top = Math.min(yHigh, yLow) * vRatio;
+        const bottom = Math.max(yHigh, yLow) * vRatio;
+        const width = rightEdge - left;
+        if (width <= 0 || bottom - top <= 0) continue;
+
+        const isBull = z.type === "bullish";
+        const base = isBull ? "38,166,154" : "239,83,80";
+        ctx.fillStyle = `rgba(${base},${z.fresh ? 0.22 : 0.13})`;
+        ctx.fillRect(left, top, width, bottom - top);
+
+        ctx.strokeStyle = `rgba(${base},${z.fresh ? 1 : 0.7})`;
+        ctx.lineWidth = z.fresh ? 1.5 : 1;
+        ctx.setLineDash(z.fresh ? [] : [4, 3]);
+        ctx.strokeRect(left, top, width, bottom - top);
+        ctx.setLineDash([]);
+
+        // Zone value label pinned to the left of the box.
+        const label = `${z.type === "bullish" ? "▲" : "▼"} ${z.high.toFixed(5)} – ${z.low.toFixed(5)}`;
+        const fontPx = 10 * vRatio;
+        ctx.font = `${fontPx}px ui-sans-serif, system-ui, sans-serif`;
+        ctx.textBaseline = "bottom";
+        ctx.fillStyle = `rgba(${base},1)`;
+        const pad = 4 * hRatio;
+        const labelY = Math.max(top + fontPx + 2 * vRatio, top - 2 * vRatio);
+        ctx.fillText(label, left + pad, labelY);
+      }
+    });
+  }
+}
+
+class FVGPaneView {
+  constructor(source) {
+    this._source = source;
+  }
+  renderer() {
+    return new FVGRenderer(this._source);
+  }
+  zOrder() {
+    return "top";
+  }
+}
+
+class FVGPrimitive {
+  constructor() {
+    this._chart = null;
+    this._series = null;
+    this._requestUpdate = null;
+    this._zones = [];
+    this._paneViews = [new FVGPaneView(this)];
+  }
+  attached({ chart, series, requestUpdate }) {
+    this._chart = chart;
+    this._series = series;
+    this._requestUpdate = requestUpdate;
+  }
+  detached() {
+    this._chart = null;
+    this._series = null;
+    this._requestUpdate = null;
+  }
+  setZones(zones) {
+    this._zones = zones || [];
+    this._requestUpdate?.();
+  }
+  updateAllViews() {}
+  paneViews() {
+    return this._paneViews;
+  }
+}
+
+export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height = 380, onFvgs }) {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const candleRef = useRef(null);
   const volumeRef = useRef(null);
-  const fvgLinesRef = useRef([]);
+  const fvgPrimitiveRef = useRef(null);
+  const onFvgsRef = useRef(onFvgs);
   const [error, setError] = useState("");
   const [lastPrice, setLastPrice] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
-  const [fvgCount, setFvgCount] = useState(0);
+  const [zones, setZones] = useState([]);
   const [touched, setTouched] = useState(false);
+
+  // Keep the latest callback without re-running the chart effect.
+  useEffect(() => {
+    onFvgsRef.current = onFvgs;
+  }, [onFvgs]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -63,44 +191,6 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
         throw new Error(err.error || `HTTP ${res.status}`);
       }
       return res.json();
-    }
-
-    function clearFVGLines(lwc) {
-      fvgLinesRef.current.forEach((pl) => {
-        try { candleRef.current?.removePriceLine(pl); } catch { /* silent */ }
-      });
-      fvgLinesRef.current = [];
-    }
-
-    function drawFVGLines(lwc, fvgZones) {
-      for (const fvg of fvgZones || []) {
-        if (fvg.fvgLow == null || fvg.fvgHigh == null) continue;
-        const isBull = fvg.type === "bullish";
-        const color = isBull ? "#26a69a" : "#ef5350";
-        const price = Number(fvg.fvgLow);
-        const priceH = Number(fvg.fvgHigh);
-        if (!Number.isFinite(price) || !Number.isFinite(priceH)) continue;
-        try {
-          fvgLinesRef.current.push(
-            candleRef.current.createPriceLine({
-              price,
-              color,
-              lineWidth: 1,
-              lineStyle: lwc.LineStyle.Solid,
-              axisLabelVisible: false,
-            })
-          );
-          fvgLinesRef.current.push(
-            candleRef.current.createPriceLine({
-              price: priceH,
-              color,
-              lineWidth: 1,
-              lineStyle: lwc.LineStyle.Solid,
-              axisLabelVisible: false,
-            })
-          );
-        } catch { /* skip bad prices */ }
-      }
     }
 
     (async () => {
@@ -150,6 +240,11 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
         });
         candleRef.current = cs;
 
+        // Attach the FVG box primitive to the candlestick series.
+        const fvgPrimitive = new FVGPrimitive();
+        fvgPrimitiveRef.current = fvgPrimitive;
+        cs.attachPrimitive(fvgPrimitive);
+
         const vs = chart.addHistogramSeries({
           priceFormat: { type: "volume" },
           priceScaleId: "volume",
@@ -178,16 +273,29 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
             candleRef.current.setData(rows.map(toCandle));
             volumeRef.current.setData(rows.map(toVolume));
 
-            // Update indicators
+            // Build the zone list: active (untouched) FVGs + the fresh one.
+            const active = (scan.activeFVGs || [])
+              .map((f) => normalizeFvg(f))
+              .filter(Boolean);
+            const freshZone = normalizeFvg(scan.freshFVG, { fresh: true });
+            const zoneList = [...active];
+            if (freshZone) {
+              // Avoid duplicating a fresh FVG already present in active list.
+              const dup = zoneList.find(
+                (z) => z.type === freshZone.type && z.formedTime === freshZone.formedTime
+              );
+              if (dup) dup.fresh = true;
+              else zoneList.push(freshZone);
+            }
+
+            fvgPrimitiveRef.current?.setZones(zoneList);
+
             setLastPrice(scan.currentPrice);
             setLastUpdate(Date.now());
-            setFvgCount(scan.activeFVGs?.length || 0);
+            setZones(zoneList);
             setTouched(!!scan.touchedNow);
             setError("");
-
-            // Redraw FVG lines
-            clearFVGLines(lwc);
-            drawFVGLines(lwc, scan.activeFVGs || []);
+            onFvgsRef.current?.(zoneList);
 
             if (firstLoad) {
               chart.timeScale().fitContent();
@@ -219,7 +327,7 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
       cancelled = true;
       if (interval) clearInterval(interval);
       window.removeEventListener("resize", onResize);
-      fvgLinesRef.current = [];
+      fvgPrimitiveRef.current = null;
       candleRef.current = null;
       volumeRef.current = null;
       if (chartRef.current) {
@@ -253,9 +361,9 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
             {Number(lastPrice).toLocaleString("en-US", { minimumFractionDigits: 5, maximumFractionDigits: 5 })}
           </span>
         )}
-        {fvgCount > 0 && (
+        {zones.length > 0 && (
           <span className="text-muted-foreground/60">
-            {fvgCount} FVG{fvgCount !== 1 ? "s" : ""}
+            {zones.length} FVG{zones.length !== 1 ? "s" : ""}
           </span>
         )}
         {touched && (
@@ -269,6 +377,30 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
           </span>
         )}
       </div>
+
+      {/* FVG zone values */}
+      {zones.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+          {zones.map((z, i) => {
+            const isBull = z.type === "bullish";
+            return (
+              <span
+                key={`${z.type}-${z.formedTime}-${i}`}
+                className={cn(
+                  "flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono",
+                  isBull ? "border-bull/40 bg-bull/10 text-bull" : "border-bear/40 bg-bear/10 text-bear",
+                  z.fresh && "font-semibold ring-1 ring-inset ring-current/30"
+                )}
+                title={`${z.type} FVG zone`}
+              >
+                {isBull ? "▲" : "▼"} {z.high.toFixed(5)}–{z.low.toFixed(5)}
+                {z.fresh && <span className="opacity-70">NEW</span>}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       {/* Chart canvas */}
       <div
         ref={containerRef}

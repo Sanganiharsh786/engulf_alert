@@ -95,9 +95,38 @@ function FullscreenChartDialog({ open, onClose, pair, tf }) {
 /* ─── Pair Card (compact header + live chart) ─── */
 function PairCard({ pair, scan, onChartClick, tf }) {
   const s = pairStyle(pair);
-  const freshFVG = scan?.freshFVG;
   const price = scan?.currentPrice;
-  const [chartHeight, setChartHeight] = useState(240);
+  const [chartHeight] = useState(240);
+  // Live FVG zones streamed from the chart on every poll.
+  const [liveZones, setLiveZones] = useState([]);
+
+  // Prefer live zones from the chart; fall back to the periodic scan payload.
+  const scanZones = useMemo(() => {
+    const active = (scan?.activeFVGs || []).map((f) => ({
+      type: f.type === "bearish" ? "bearish" : "bullish",
+      high: Math.max(Number(f.fvgHigh), Number(f.fvgLow)),
+      low: Math.min(Number(f.fvgHigh), Number(f.fvgLow)),
+      formedTime: f.formedAt ? Math.floor(f.formedAt / 1000) : null,
+      fresh: false,
+    }));
+    if (scan?.freshFVG) {
+      const fr = scan.freshFVG;
+      const ft = fr.formedAt ? Math.floor(fr.formedAt / 1000) : null;
+      const dup = active.find((z) => z.type === (fr.type === "bearish" ? "bearish" : "bullish") && z.formedTime === ft);
+      if (dup) dup.fresh = true;
+      else active.push({
+        type: fr.type === "bearish" ? "bearish" : "bullish",
+        high: Math.max(Number(fr.fvgHigh), Number(fr.fvgLow)),
+        low: Math.min(Number(fr.fvgHigh), Number(fr.fvgLow)),
+        formedTime: ft,
+        fresh: true,
+      });
+    }
+    return active;
+  }, [scan]);
+
+  const zones = liveZones.length ? liveZones : scanZones;
+  const freshZone = zones.find((z) => z.fresh);
 
   return (
     <Card className={cn("overflow-hidden border transition-all duration-200", s.border, "hover:border-foreground/30")}>
@@ -123,9 +152,9 @@ function PairCard({ pair, scan, onChartClick, tf }) {
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            {freshFVG && (
-              <Badge className={cn("animate-pulse text-[10px] px-2 py-0.5 font-bold border", freshFVG.type === "bullish" ? "border-bull/60 bg-bull/15 text-bull" : "border-bear/60 bg-bear/15 text-bear")}>
-                NEW {freshFVG.type.toUpperCase()} FVG
+            {freshZone && (
+              <Badge className={cn("animate-pulse text-[10px] px-2 py-0.5 font-bold border", freshZone.type === "bullish" ? "border-bull/60 bg-bull/15 text-bull" : "border-bear/60 bg-bear/15 text-bear")}>
+                NEW {freshZone.type.toUpperCase()} FVG
               </Badge>
             )}
             {scan?.touchedNow && (
@@ -136,15 +165,40 @@ function PairCard({ pair, scan, onChartClick, tf }) {
               className="flex items-center gap-1 rounded-md border border-border/50 bg-background/40 px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-background/60 transition"
               title="Open fullscreen chart"
             >
-              <Maximize2 className="size-3" />                <span className="hidden sm:inline">Expand</span> 
+              <Maximize2 className="size-3" />                <span className="hidden sm:inline">Expand</span>
             </button>
           </div>
+        </div>
+
+        {/* ── FVG zone values ── */}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {zones.length === 0 ? (
+            <span className="text-[10px] text-muted-foreground/60">No active {tf} FVG zones</span>
+          ) : (
+            zones.map((z, i) => {
+              const isBull = z.type === "bullish";
+              return (
+                <span
+                  key={`${z.type}-${z.formedTime}-${i}`}
+                  className={cn(
+                    "flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[10px]",
+                    isBull ? "border-bull/40 bg-bull/10 text-bull" : "border-bear/40 bg-bear/10 text-bear",
+                    z.fresh && "font-semibold ring-1 ring-inset ring-current/40"
+                  )}
+                  title={`${z.type} FVG · ${z.fresh ? "fresh" : "active"}`}
+                >
+                  {isBull ? "▲" : "▼"} {fmt(z.high)} → {fmt(z.low)}
+                  {z.fresh && <span className="opacity-70">· NEW</span>}
+                </span>
+              );
+            })
+          )}
         </div>
       </div>
 
       {/* ── Live Chart ── */}
       <div className="px-3 pb-2">
-        <FVGLiveChart pair={pair} tf={tf} height={chartHeight} refreshMs={15_000} />
+        <FVGLiveChart pair={pair} tf={tf} height={chartHeight} refreshMs={15_000} onFvgs={setLiveZones} />
       </div>
 
 
@@ -327,6 +381,11 @@ export default function Alert4HFVG() {
                       {!s && <span className="text-[10px] text-muted-foreground/40">—</span>}
                     </div>
                     <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">{active} FVG{active !== 1 ? "s" : ""}</div>
+                    {fresh && (
+                      <div className={cn("mt-1 font-mono text-[10px]", fresh.type === "bullish" ? "text-bull" : "text-bear")}>
+                        {fresh.type === "bullish" ? "▲" : "▼"} {fmt(Math.max(fresh.fvgHigh, fresh.fvgLow))} → {fmt(Math.min(fresh.fvgHigh, fresh.fvgLow))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
