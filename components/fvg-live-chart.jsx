@@ -315,18 +315,27 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
 
     const onResize = () => {
       if (chartRef.current && containerRef.current) {
-        chartRef.current.applyOptions({
-          width: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight,
-        });
+        const w = containerRef.current.clientWidth;
+        const h = containerRef.current.clientHeight;
+        if (w > 0 && h > 0) {
+          chartRef.current.applyOptions({ width: w, height: h });
+        }
       }
     };
     window.addEventListener("resize", onResize);
+    // Track container size directly — handles "100%" heights inside dialogs
+    // that only settle after the open animation.
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined" && containerRef.current) {
+      ro = new ResizeObserver(onResize);
+      ro.observe(containerRef.current);
+    }
 
     return () => {
       cancelled = true;
       if (interval) clearInterval(interval);
       window.removeEventListener("resize", onResize);
+      if (ro) ro.disconnect();
       fvgPrimitiveRef.current = null;
       candleRef.current = null;
       volumeRef.current = null;
@@ -347,8 +356,12 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
     );
   }
 
+  // "100%" (or any string) height means "fill parent" — the chart div flexes
+  // to fill remaining space; a numeric height is applied directly.
+  const fillParent = typeof height === "string";
+
   return (
-    <div className="flex flex-col gap-2">
+    <div className={cn("flex flex-col gap-2", fillParent && "h-full min-h-0")}>
       {/* Live indicator bar */}
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <span className="flex items-center gap-1.5 rounded-md border border-bull/40 bg-bull/10 px-2 py-0.5 font-semibold text-bull">
@@ -404,8 +417,11 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
       {/* Chart canvas */}
       <div
         ref={containerRef}
-        className="w-full overflow-hidden rounded-lg border border-border/40 bg-[#0e1422]"
-        style={{ height }}
+        className={cn(
+          "w-full overflow-hidden rounded-lg border border-border/40 bg-[#0e1422]",
+          fillParent && "flex-1 min-h-0"
+        )}
+        style={fillParent ? undefined : { height }}
       />
     </div>
   );
