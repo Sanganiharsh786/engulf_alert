@@ -101,34 +101,27 @@ export function FVGChart({ candleData = [], fvgZones = [], height = 300, pair = 
           }))
         );
 
-        // ── Draw FVG zones as price lines ──
-        const priceLines = [];
+        // ── Draw FVG zones as solid price lines (no labels) ──
         for (const fvg of fvgZones) {
           if (fvg.fvgLow == null || fvg.fvgHigh == null) continue;
           const isBull = fvg.type === "bullish";
           const color = isBull ? "#26a69a" : "#ef5350";
-          const label = isBull ? "BULL FVG" : "BEAR FVG";
 
           try {
-            priceLines.push(
-              candleSeries.createPriceLine({
-                price: Number(fvg.fvgLow),
-                color,
-                lineWidth: 1,
-                lineStyle: lwc.LineStyle.Dashed,
-                axisLabelVisible: true,
-                title: label,
-              })
-            );
-            priceLines.push(
-              candleSeries.createPriceLine({
-                price: Number(fvg.fvgHigh),
-                color,
-                lineWidth: 1,
-                lineStyle: lwc.LineStyle.Dashed,
-                axisLabelVisible: false,
-              })
-            );
+            candleSeries.createPriceLine({
+              price: Number(fvg.fvgLow),
+              color,
+              lineWidth: 1,
+              lineStyle: lwc.LineStyle.Solid,
+              axisLabelVisible: false,
+            });
+            candleSeries.createPriceLine({
+              price: Number(fvg.fvgHigh),
+              color,
+              lineWidth: 1,
+              lineStyle: lwc.LineStyle.Solid,
+              axisLabelVisible: false,
+            });
           } catch {
             // skip bad prices
           }
