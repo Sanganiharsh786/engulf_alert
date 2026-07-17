@@ -9,11 +9,8 @@ import {
   Bell,
   CheckCircle2,
   ChevronDown,
-  ChevronUp,
-  ExternalLink,
   RefreshCw,
-  TrendingDown,
-  TrendingUp,
+  Maximize2,
   Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,8 +18,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { FVGChartDialog } from "@/components/fvg-chart-dialog";
+import { FVGLiveChart } from "@/components/fvg-live-chart";
 import { useToast } from "../toast";
 
 const fmt = (n) =>
@@ -69,57 +67,62 @@ function AlertBanner({ alert, onDismiss }) {
   );
 }
 
-/* ─── FVG Zone Row ─── */
-function FvgZoneRow({ fvg }) {
-  const [expanded, setExpanded] = useState(false);
-  const isBull = fvg.type === "bullish";
+/* ─── Fullscreen Chart Dialog ─── */
+function FullscreenChartDialog({ open, onClose, pair, tf }) {
+  if (!pair) return null;
+
+  const s = pairStyle(pair);
+
   return (
-    <div
-      className={cn("rounded-lg border text-xs transition-all cursor-pointer", isBull ? "border-bull/15 bg-bull/3" : "border-bear/15 bg-bear/3", fvg.touchedAt && "border-gold/30 bg-gold/3")}
-      onClick={() => setExpanded(!expanded)}
-    >
-      <div className="flex items-center gap-2 px-3 py-2">
-        {isBull ? <TrendingUp className="size-3.5 shrink-0 text-bull" /> : <TrendingDown className="size-3.5 shrink-0 text-bear" />}
-        <span className="font-mono font-medium text-[11px]">{fmt(fvg.fvgLow)} → {fmt(fvg.fvgHigh)}</span>
-        <span className={cn("ml-auto text-[10px] font-medium", fvg.touchedAt ? "text-gold" : "text-muted-foreground/60")}>
-          {fvg.touchedAt ? "✓ Touched" : "Untouched"}
-        </span>
-        {expanded ? <ChevronUp className="size-3.5 text-muted-foreground" /> : <ChevronDown className="size-3.5 text-muted-foreground" />}
-      </div>
-    </div>
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="flex max-h-[95dvh] w-[calc(100vw-1.5rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0 !bg-background/95 backdrop-blur-xl">
+        <DialogHeader className="border-b border-border px-4 py-3 pr-12 sm:px-6 sm:py-4">
+          <DialogTitle className="flex flex-wrap items-center gap-2 text-base sm:text-lg">
+            <span className={cn("font-bold", s.accent)}>{pair}</span>
+            <Badge variant="outline" className="text-muted-foreground">{tf} · Live</Badge>
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+          <div className="h-[50vh] min-h-[350px] sm:h-[65vh] sm:min-h-[500px]">
+            <FVGLiveChart pair={pair} tf={tf} height="100%" />
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-/* ─── Pair Card (compact, click to open full chart) ─── */
+/* ─── Pair Card (compact header + live chart) ─── */
 function PairCard({ pair, scan, onChartClick, tf }) {
   const s = pairStyle(pair);
   const freshFVG = scan?.freshFVG;
-  const activeFVGs = scan?.activeFVGs || [];
   const price = scan?.currentPrice;
-  const candle = scan?.currentCandle;
+  const [chartHeight, setChartHeight] = useState(240);
 
   return (
-    <Card
-      className={cn("overflow-hidden border transition-all duration-200 cursor-pointer", "hover:border-foreground/30 hover:shadow-md hover:-translate-y-0.5", s.border)}
-      onClick={() => onChartClick(pair)}
-    >
-      <div className={cn("bg-gradient-to-r px-4 py-4", s.bg)}>
+    <Card className={cn("overflow-hidden border transition-all duration-200", s.border, "hover:border-foreground/30")}>
+      {/* ── Header ── */}
+      <div className={cn("bg-gradient-to-r px-4 pt-4 pb-3", s.bg)}>
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-3 min-w-0">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-background/40 text-base font-black">
               {pair.split("/")[0][0]}
             </span>
             <div className="min-w-0">
-              <h3 className="text-lg font-bold tracking-tight truncate">{pair}</h3>
-              <p className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
-                <span>{tf} · Twelve Data</span>
-                {scan?.status === "ok" && price && (
-                  <span className={cn("font-mono font-semibold", s.accent)}>{fmt(price)}</span>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold tracking-tight">{pair}</h3>
+                {price && (
+                  <span className={cn("font-mono text-sm font-semibold", s.accent)}>
+                    {Number(price).toLocaleString("en-US", { minimumFractionDigits: 5, maximumFractionDigits: 5 })}
+                  </span>
                 )}
+              </div>
+              <p className="text-[11px] text-muted-foreground flex items-center gap-2">
+                <span>{tf} · Twelve Data</span>
               </p>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-1 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             {freshFVG && (
               <Badge className={cn("animate-pulse text-[10px] px-2 py-0.5 font-bold border", freshFVG.type === "bullish" ? "border-bull/60 bg-bull/15 text-bull" : "border-bear/60 bg-bear/15 text-bear")}>
                 NEW {freshFVG.type.toUpperCase()} FVG
@@ -128,48 +131,23 @@ function PairCard({ pair, scan, onChartClick, tf }) {
             {scan?.touchedNow && (
               <Badge className="animate-pulse text-[10px] px-2 py-0.5 font-bold border border-gold/60 bg-gold/15 text-gold">TOUCHED</Badge>
             )}
-            {!freshFVG && !scan?.touchedNow && scan?.status === "ok" && (
-              <Badge variant="outline" className="text-[9px] px-1.5 py-0 text-muted-foreground border-border">
-                {activeFVGs.length} FVG{activeFVGs.length !== 1 ? "s" : ""}
-              </Badge>
-            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); onChartClick(pair); }}
+              className="flex items-center gap-1 rounded-md border border-border/50 bg-background/40 px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-background/60 transition"
+              title="Open fullscreen chart"
+            >
+              <Maximize2 className="size-3" />                <span className="hidden sm:inline">Expand</span> 
+            </button>
           </div>
-        </div>
-        <div className="mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-background/20 py-2 text-[10px] text-muted-foreground/60">
-          <ExternalLink className="size-3" />
-          Click to view full chart with FVG zones
         </div>
       </div>
-      <CardContent className="p-4">
-        {candle && (
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            {[
-              { label: "Open", val: candle.open, color: "" },
-              { label: "High", val: candle.high, color: "text-bull" },
-              { label: "Low", val: candle.low, color: "text-bear" },
-              { label: "Close", val: candle.close, color: "" },
-              { label: "Volume", val: candle.volume, color: "" },
-              { label: "Time", val: candle.ts ? new Date(candle.ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "", color: "" },
-            ].map(({ label, val, color }, i) => (
-              <div key={i} className="flex items-center justify-between rounded-md bg-muted/30 px-2 py-1.5">
-                <span className="text-[9px] uppercase tracking-wider text-muted-foreground">{label}</span>
-                <span className={cn("font-mono text-[11px] font-medium", color)}>{fmt(val)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        {activeFVGs.length > 0 ? (
-          <div className="space-y-1.5">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">FVG Zones ({activeFVGs.length})</p>
-            {activeFVGs.slice(0, 4).map((fvg, i) => <FvgZoneRow key={i} fvg={fvg} />)}
-          </div>
-        ) : (
-          <p className="text-[11px] text-muted-foreground/60 italic">No FVG zones detected yet</p>
-        )}
-        {!scan?.tvSymbol && scan?.status === "error" && (
-          <span className="text-[10px] text-bear/80">{scan.error}</span>
-        )}
-      </CardContent>
+
+      {/* ── Live Chart ── */}
+      <div className="px-3 pb-2">
+        <FVGLiveChart pair={pair} tf={tf} height={chartHeight} refreshMs={15_000} />
+      </div>
+
+
     </Card>
   );
 }
@@ -244,15 +222,15 @@ export default function Alert4HFVG() {
   }, [scans]);
 
   return (
-    <div className="mx-auto max-w-[1280px] px-3 py-4 sm:px-4 sm:py-6">
+    <div className="mx-auto max-w-[1400px] px-3 py-4 sm:px-4 sm:py-6">
       {/* ─── Header ─── */}
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-4">
         <div className="flex items-center gap-3">
           <span className={cn("size-2.5 shrink-0 rounded-full", auto ? "animate-pulse bg-bull" : "bg-muted-foreground/40")} />
           <div>
-            <h1 className="text-lg font-bold tracking-tight">4H FVG Alerts</h1>
+            <h1 className="text-lg font-bold tracking-tight">FVG Alerts &amp; Live Charts</h1>
             <p className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
-              {lastScan ? `Last scan ${new Date(lastScan).toLocaleTimeString()}${scanning ? " · scanning…" : ""}` : "Not scanned yet"}
+              {lastScan ? `Last full scan ${new Date(lastScan).toLocaleTimeString()}${scanning ? " · scanning…" : ""}` : "Not scanned yet"}
               {fvgEnabled && <Badge className="text-[9px] px-1.5 bg-bull/15 text-bull border-0">Telegram alerts on</Badge>}
               {!fvgEnabled && lastScan && <span className="text-[10px] text-muted-foreground/60">Toggle FVG alerts in Dashboard settings</span>}
             </p>
@@ -310,24 +288,22 @@ export default function Alert4HFVG() {
         </div>
       )}
 
-      {/* ─── Chart Dialog ─── */}
-      <FVGChartDialog
+      {/* ─── Fullscreen Chart Dialog ─── */}
+      <FullscreenChartDialog
         open={!!chartPair}
         onClose={() => setChartPair(null)}
         pair={chartPair}
-        scan={chartPair ? scanMap[chartPair] : null}
-        candleData={chartPair ? scanMap[chartPair]?.candleData || null : null}
         tf={tf}
       />
 
-      {/* ─── Pair Cards ─── */}
-      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {/* ─── Pair Cards with Live Charts ─── */}
+      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
         {["XAU/USD", "GBP/USD"].map((pair) => (
           <PairCard key={pair} pair={pair} scan={scanMap[pair]} onChartClick={setChartPair} tf={tf} />
         ))}
 
         {/* ─── Status Summary ─── */}
-        <Card className="border-border/50 sm:col-span-2">
+        <Card className="border-border/50 lg:col-span-2">
           <CardHeader className="border-b border-border py-3">
             <CardTitle className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               <Activity className="size-3.5" /> Scan Status
@@ -358,12 +334,13 @@ export default function Alert4HFVG() {
             <Separator className="my-3" />
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-[11px] text-muted-foreground">
               <span>
-                {lastScan ? `Last: ${new Date(lastScan).toLocaleString()}` : "Not scanned yet"}
+                {lastScan ? `Last scan: ${new Date(lastScan).toLocaleString()}` : "Not scanned yet"}
                 {fvgEnabled && <span className="ml-2 text-bull">· Telegram alerts active</span>}
               </span>
               <span className="flex items-center gap-1.5">
                 <span className={cn("size-2 rounded-full", auto ? "bg-bull animate-pulse" : "bg-muted-foreground/40")} />
                 {auto ? `Auto-scan every ${tf === "5m" ? "3m" : tf === "15m" ? "5m" : tf === "30m" ? "10m" : tf === "1h" ? "10m" : "15m"}` : "Auto-scan off"}
+                <span className="text-muted-foreground/60 ml-2">· Live charts update every 15s</span>
               </span>
             </div>
           </CardContent>
@@ -376,10 +353,10 @@ export default function Alert4HFVG() {
         </summary>
         <div className="mt-3 text-xs text-muted-foreground space-y-1.5 leading-relaxed">
           <p><strong className="text-foreground">Fair Value Gap (FVG):</strong> A 3-candle pattern where price moves aggressively, leaving a gap between candle 1 and candle 3.</p>
-          <p><strong className="text-bull">Bullish FVG:</strong> Candle 3's low is above Candle 1's high → support zone where buyers may step in.</p>
-          <p><strong className="text-bear">Bearish FVG:</strong> Candle 3's high is below Candle 1's low → resistance zone where sellers may step in.</p>
-          <p><strong>FVG Touch Alert:</strong> Fires when price returns into the gap zone — signalling a potential reversal/continuation entry.</p>
-          <p className="text-gold">💡 Real-time data from Twelve Data. Enable Telegram alerts from Dashboard → Settings → FVG Alerts.</p>
+          <p><strong className="text-bull">Bullish FVG:</strong> Candle 3&apos;s low is above Candle 1&apos;s high → support zone.</p>
+          <p><strong className="text-bear">Bearish FVG:</strong> Candle 3&apos;s high is below Candle 1&apos;s low → resistance zone.</p>
+          <p><strong>FVG Touch Alert:</strong> Fires when price returns into the gap zone.</p>
+          <p className="text-gold">💡 Live chart updates every 15s via cached Twelve Data. Full FVG scan runs every few minutes. Enable Telegram alerts from Dashboard → Settings → FVG Alerts.</p>
         </div>
       </details>
     </div>
