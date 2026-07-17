@@ -63,36 +63,34 @@ async function runFvgScan({ dryRun = false } = {}) {
     // Scan full history for all FVGs
     const allFVGs = scanHistoryForFVG(rows);
 
-    // Find FRESH touches: current candle touches FVG BUT previous candle did NOT
-    // This ensures we only alert when price NEWLY enters the zone (live touch)
-    const touchedFVGs = allFVGs.filter((fvg) => {
-      // Don't count the formation candle itself as a touch
-      if (fvg.formedAt >= lastCandle.ts) return false;
-      // Current candle must touch the FVG
-      if (!candleTouchesFVG(lastCandle, fvg)) return false;
-      // Previous candle must NOT touch the FVG (ensures it's a fresh entry)
-      if (secondLast && candleTouchesFVG(secondLast, fvg)) return false;
-      return true;
-    });
-
-    // Generate alerts for touched FVGs not yet alerted
+    // Only alert when the FRESH FVG (latest 3 candles) gets touched by price.
+    // Old FVGs from days ago touching again do NOT trigger alerts.
     const pairAlerts = [];
-    for (const fvg of touchedFVGs) {
-      const key = `${name}|${fvg.type}|${fvg.fvgLow.toFixed(5)}|${fvg.formedAt}`;
-      // Skip if already alerted in a previous scan (production mode)
-      if (!dryRun && alertedKeys.has(key)) continue;
-      // Persist to alertedKeys so we don't re-alert (only in production mode)
-      if (!dryRun) alertedKeys.add(key);
-      pairAlerts.push({
-        pair: name,
-        type: fvg.type,
-        fvgLow: fvg.fvgLow,
-        fvgHigh: fvg.fvgHigh,
-        formedAt: fvg.formedAt,
-        touchedAt: lastCandle.ts,
-        touchPrice: lastCandle.close,
-        id: key,
-      });
+    let touchedNow = false;
+    if (freshFVG && freshFVG.formedAt < lastCandle.ts) {
+      // Current candle must touch the fresh FVG
+      const currentTouches = candleTouchesFVG(lastCandle, freshFVG);
+      // Previous candle must NOT touch it (ensures it's a fresh entry)
+      const prevTouches = secondLast && candleTouchesFVG(secondLast, freshFVG);
+
+      if (currentTouches && !prevTouches) {
+        touchedNow = true;
+        const key = `${name}|${freshFVG.type}|${freshFVG.fvgLow.toFixed(5)}|${freshFVG.formedAt}`;
+        // Skip if already alerted in a previous scan (production mode)
+        if (!dryRun && !alertedKeys.has(key)) {
+          alertedKeys.add(key);
+          pairAlerts.push({
+            pair: name,
+            type: freshFVG.type,
+            fvgLow: freshFVG.fvgLow,
+            fvgHigh: freshFVG.fvgHigh,
+            formedAt: freshFVG.formedAt,
+            touchedAt: lastCandle.ts,
+            touchPrice: lastCandle.close,
+            id: key,
+          });
+        }
+      }
     }
 
     if (pairAlerts.length) {
@@ -116,8 +114,8 @@ async function runFvgScan({ dryRun = false } = {}) {
       activeFVGs: allFVGs.filter(
         (f) => f.formedAt > Date.now() - 7 * 24 * 60 * 60 * 1000
       ),
-      touchedNow: touchedFVGs.length > 0,
-      touchedFVGs,
+      touchedNow,
+      touchedFVGs: pairAlerts,
       alerts: pairAlerts,
       candles: rows.length,
       tvSymbol: pair.tvSymbol,

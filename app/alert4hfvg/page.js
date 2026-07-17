@@ -185,12 +185,13 @@ function PairCard({ pair, scan, candleData }) {
         </div>
       </div>
 
-      {/* FVG Chart — REAL TradingView chart with FVG zone lines */}
+      {/* FVG Chart — lightweight-charts candlestick chart with FVG zone price lines */}
       <div className="border-b border-border/50">
         <div className="px-3 pt-3">
           <FVGChart
             key={`fg-${scan?.scannedAt || 0}`}
-            symbol={scan?.tvSymbol || "FX:EURUSD"}
+            pair={pair}
+            candleData={candleData || []}
             fvgZones={activeFVGs}
             height={expandedChart ? 320 : 180}
           />
@@ -221,7 +222,7 @@ function PairCard({ pair, scan, candleData }) {
       <CardContent className="p-4">
         {/* Candle details */}
         {candle && (
-          <div className="grid grid-cols-3 gap-2 mb-3">
+          <div className="grid grid-cols-2 gap-2 mb-3">
             {[
               { label: "Open", val: candle.open, color: "" },
               { label: "High", val: candle.high, color: "text-bull" },
@@ -396,7 +397,7 @@ export default function Alert4HFVG() {
       )}
 
       {/* ─── Pair Cards ─── */}
-      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
         {["EUR/USD", "USD/JPY", "USD/CAD", "XAU/USD", "GBP/USD"].map((pair) => {
           const scan = scanMap[pair];
           const candleData = scan?.candleData || null;
