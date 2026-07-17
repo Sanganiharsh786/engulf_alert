@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ExternalLink } from "lucide-react";
 import { FVGChart } from "@/components/fvg-chart";
 
-export function FVGChartDialog({ open, onClose, pair, scan, candleData }) {
+export function FVGChartDialog({ open, onClose, pair, scan, candleData, tf = "4h" }) {
   if (!pair || !scan) return null;
 
   const activeFVGs = scan?.activeFVGs || [];
@@ -38,7 +38,7 @@ export function FVGChartDialog({ open, onClose, pair, scan, candleData }) {
               </Badge>
             )}
             <Badge variant="outline" className="text-muted-foreground">
-              4H
+              {tf}
             </Badge>
           </DialogTitle>
         </DialogHeader>

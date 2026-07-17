@@ -10,8 +10,8 @@ import { sendTelegramMessage } from "@/lib/telegram";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const TF = "4h";
-const CANDLE_COUNT = 120;
+const DEFAULT_TF = "4h";
+const CANDLE_COUNT = { "5m": 200, "15m": 200, "30m": 150, "1h": 120, "4h": 120 };
 
 // Store alerted FVG keys in memory (per server instance).
 const alertedKeys = new Set();
@@ -24,8 +24,9 @@ const FVG_PAIRS = [
 
 // Shared scan logic for both GET and POST.
 // When dryRun is true, alerts are detected but not persisted to alertedKeys.
-async function runFvgScan({ dryRun = false } = {}) {
-  const { results, errors } = await fetchAllPairs(TF, CANDLE_COUNT);
+async function runFvgScan({ dryRun = false, tf = DEFAULT_TF } = {}) {
+  const count = CANDLE_COUNT[tf] || 120;
+  const { results, errors } = await fetchAllPairs(tf, count);
 
   const scans = [];
   const newAlerts = [];
@@ -44,7 +45,7 @@ async function runFvgScan({ dryRun = false } = {}) {
     }
 
     // Filter to only closed candles
-    const rows = closedCandles(raw, tfSeconds(TF), Date.now());
+    const rows = closedCandles(raw, tfSeconds(tf), Date.now());
 
     if (rows.length < 3) {
       scans.push({ pair: name, status: "waiting", candles: rows.length });
@@ -108,9 +109,7 @@ async function runFvgScan({ dryRun = false } = {}) {
       candleData,
       freshFVG,
       scannedAt: Date.now(),
-      activeFVGs: allFVGs.filter(
-        (f) => f.formedAt > Date.now() - 7 * 24 * 60 * 60 * 1000
-      ),
+      activeFVGs: freshFVG ? [freshFVG] : [], // Only show the fresh FVG on chart
       touchedNow,
       touchedFVGs: pairAlerts,
       alerts: pairAlerts,
@@ -156,7 +155,7 @@ TradingView: https://www.tradingview.com/chart/?symbol=${FVG_PAIRS.find(p => p.n
   return true;
 }
 
-export async function GET() {
+export async function GET(req) {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
@@ -164,7 +163,13 @@ export async function GET() {
     const store = await readStore(user);
     const fvgEnabled = !!(store.settings?.fvgAlerts?.enabled);
 
-    const result = await runFvgScan();
+    // Read timeframe from query param
+    const url = new URL(req.url);
+    const tf = url.searchParams.get("tf") || DEFAULT_TF;
+
+    const result = await runFvgScan({ tf });
+    // Attach the tf to result so the page knows which timeframe was used
+    result.tf = tf;
 
     // Send Telegram alerts if user has FVG alerts enabled
     const tgResults = [];

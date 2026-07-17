@@ -91,7 +91,7 @@ function FvgZoneRow({ fvg }) {
 }
 
 /* ─── Pair Card (compact, click to open full chart) ─── */
-function PairCard({ pair, scan, onChartClick }) {
+function PairCard({ pair, scan, onChartClick, tf }) {
   const s = pairStyle(pair);
   const freshFVG = scan?.freshFVG;
   const activeFVGs = scan?.activeFVGs || [];
@@ -112,7 +112,7 @@ function PairCard({ pair, scan, onChartClick }) {
             <div className="min-w-0">
               <h3 className="text-lg font-bold tracking-tight truncate">{pair}</h3>
               <p className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
-                <span>4H · Twelve Data</span>
+                <span>{tf} · Twelve Data</span>
                 {scan?.status === "ok" && price && (
                   <span className={cn("font-mono font-semibold", s.accent)}>{fmt(price)}</span>
                 )}
@@ -184,6 +184,14 @@ export default function Alert4HFVG() {
   const [error, setError] = useState(null);
   const [fvgEnabled, setFvgEnabled] = useState(false);
   const [chartPair, setChartPair] = useState(null);
+  const [tf, setTf] = useState("4h");
+  const TF_OPTIONS = [
+    { value: "5m", label: "5m" },
+    { value: "15m", label: "15m" },
+    { value: "30m", label: "30m" },
+    { value: "1h", label: "1h" },
+    { value: "4h", label: "4h" },
+  ];
   const timer = useRef(null);
   const lastScanRef = useRef(0);
   const toast = useToast();
@@ -194,7 +202,7 @@ export default function Alert4HFVG() {
     setScanning(true);
     setError(null);
     try {
-      const res = await fetch("/api/scan-fvg").then((r) => {
+      const res = await fetch(`/api/scan-fvg?tf=${tf}`).then((r) => {
         if (r.status === 401) { window.location.href = "/login"; return null; }
         return r.json();
       });
@@ -209,6 +217,7 @@ export default function Alert4HFVG() {
         ].slice(0, 50));
         toast(`${res.newAlerts.length} FVG touch${res.newAlerts.length > 1 ? "es" : ""} detected${res.fvgEnabled ? " · Telegram sent" : ""}`, "success");
       }
+      if (res.tf) setTf(res.tf);
       setLastScan(res.scannedAt);
     } catch (e) {
       setError(String(e.message || e));
@@ -216,14 +225,15 @@ export default function Alert4HFVG() {
     } finally {
       setScanning(false);
     }
-  }, [toast]);
+  }, [toast, tf]);
 
   useEffect(() => {
     if (!auto) { clearInterval(timer.current); return; }
     scanNow();
-    timer.current = setInterval(scanNow, 900000);
+    const intervalMs = tf === "5m" ? 180000 : tf === "15m" ? 300000 : tf === "30m" ? 600000 : tf === "1h" ? 600000 : 900000;
+    timer.current = setInterval(scanNow, intervalMs);
     return () => clearInterval(timer.current);
-  }, [auto, scanNow]);
+  }, [auto, scanNow, tf]);
 
   const dismissAlert = (id) => setAlerts((prev) => prev.filter((a) => a.id !== id));
   const scanMap = useMemo(() => {
@@ -255,6 +265,23 @@ export default function Alert4HFVG() {
           <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
             <Link href="/totalalerts"><Bell className="size-3.5 mr-1" /> Alerts</Link>
           </Button>
+          {/* Timeframe selector */}
+          <div className="flex rounded-md border border-border bg-card overflow-hidden">
+            {TF_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setTf(opt.value)}
+                className={cn(
+                  "px-2 py-1.5 text-[11px] font-medium transition",
+                  tf === opt.value
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
           <label className="flex h-8 cursor-pointer select-none items-center gap-2 rounded-md border border-border bg-card px-2.5 text-xs">
             <Switch checked={auto} onCheckedChange={setAuto} className="scale-75" /> Auto
           </label>
@@ -290,12 +317,13 @@ export default function Alert4HFVG() {
         pair={chartPair}
         scan={chartPair ? scanMap[chartPair] : null}
         candleData={chartPair ? scanMap[chartPair]?.candleData || null : null}
+        tf={tf}
       />
 
       {/* ─── Pair Cards ─── */}
       <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
         {["XAU/USD", "GBP/USD"].map((pair) => (
-          <PairCard key={pair} pair={pair} scan={scanMap[pair]} onChartClick={setChartPair} />
+          <PairCard key={pair} pair={pair} scan={scanMap[pair]} onChartClick={setChartPair} tf={tf} />
         ))}
 
         {/* ─── Status Summary ─── */}
@@ -335,7 +363,7 @@ export default function Alert4HFVG() {
               </span>
               <span className="flex items-center gap-1.5">
                 <span className={cn("size-2 rounded-full", auto ? "bg-bull animate-pulse" : "bg-muted-foreground/40")} />
-                {auto ? "Auto-scan every 15m" : "Auto-scan off"}
+                {auto ? `Auto-scan every ${tf === "5m" ? "3m" : tf === "15m" ? "5m" : tf === "30m" ? "10m" : tf === "1h" ? "10m" : "15m"}` : "Auto-scan off"}
               </span>
             </div>
           </CardContent>
