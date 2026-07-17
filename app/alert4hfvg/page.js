@@ -189,7 +189,7 @@ function PairCard({ pair, scan, candleData }) {
       <div className="border-b border-border/50">
         <div className="px-3 pt-3">
           <FVGChart
-            key={lastScan || scan?.scannedAt || Date.now()}
+            key={`fg-${scan?.scannedAt || 0}`}
             symbol={scan?.tvSymbol || "FX:EURUSD"}
             fvgZones={activeFVGs}
             height={expandedChart ? 320 : 180}

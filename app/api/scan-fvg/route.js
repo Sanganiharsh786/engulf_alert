@@ -63,11 +63,16 @@ async function runFvgScan({ dryRun = false } = {}) {
     // Scan full history for all FVGs
     const allFVGs = scanHistoryForFVG(rows);
 
-    // Check if the latest candle touched any existing FVG
+    // Find FRESH touches: current candle touches FVG BUT previous candle did NOT
+    // This ensures we only alert when price NEWLY enters the zone (live touch)
     const touchedFVGs = allFVGs.filter((fvg) => {
-      // Don't count the formation candles as a touch
+      // Don't count the formation candle itself as a touch
       if (fvg.formedAt >= lastCandle.ts) return false;
-      return candleTouchesFVG(lastCandle, fvg);
+      // Current candle must touch the FVG
+      if (!candleTouchesFVG(lastCandle, fvg)) return false;
+      // Previous candle must NOT touch the FVG (ensures it's a fresh entry)
+      if (secondLast && candleTouchesFVG(secondLast, fvg)) return false;
+      return true;
     });
 
     // Generate alerts for touched FVGs not yet alerted
@@ -107,6 +112,7 @@ async function runFvgScan({ dryRun = false } = {}) {
       prevCandle: secondLast,
       candleData,
       freshFVG,
+      scannedAt: Date.now(),
       activeFVGs: allFVGs.filter(
         (f) => f.formedAt > Date.now() - 7 * 24 * 60 * 60 * 1000
       ),
