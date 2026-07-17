@@ -5,6 +5,7 @@ import { detectEngulfing } from "@/lib/engulfing";
 import { tradingViewLink } from "@/lib/scanner";
 import { fetchOHLCV } from "@/lib/market";
 import { currentUser } from "@/lib/session";
+import { testDataConnection } from "@/lib/oanda";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -66,6 +67,20 @@ export async function POST() {
     checks.push({ name: "Email login", pass: true, detail: "credentials OK" });
   } catch (e) {
     checks.push({ name: "Email login", pass: false, detail: String(e.message || e) });
+  }
+
+  // 6 - Twelve Data source (for 4H FVG alerts, real-time forex)
+  try {
+    const tdResult = await testDataConnection();
+    checks.push({
+      name: "Twelve Data",
+      pass: tdResult.ok,
+      detail: tdResult.ok
+        ? `Connected to Twelve Data · ${tdResult.pairs?.length || 0} pairs loaded`
+        : tdResult.error || "API key not configured",
+    });
+  } catch (e) {
+    checks.push({ name: "Twelve Data", pass: false, detail: String(e.message || e) });
   }
 
   return NextResponse.json({ checks });

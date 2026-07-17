@@ -14,6 +14,7 @@ import {
   Trash2,
   X,
   XCircle,
+  Zap,
 } from "lucide-react";
 import { LiveChart } from "@/components/live-chart";
 import { Button } from "@/components/ui/button";
@@ -324,6 +325,12 @@ function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onSc
           <a href="/totalalerts" title="All alerts — tick which trades you placed">
             <Bell />
             Total Alerts
+          </a>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <a href="/alert4hfvg" title="4H Fair Value Gap alerts — real-time forex">
+            <Zap />
+            4H FVG
           </a>
         </Button>
 
@@ -709,6 +716,11 @@ function SettingsPanel({ settings, mutate, dna }) {
       if (!s.settings.risk) s.settings.risk = {};
       s.settings.risk[field] = value;
     });
+  const setFvg = (field, value) =>
+    mutate((s) => {
+      if (!s.settings.fvgAlerts) s.settings.fvgAlerts = {};
+      s.settings.fvgAlerts[field] = value;
+    });
   const email = settings.email || {};
   const telegram = settings.telegram || {};
   const risk = settings.risk || {};
@@ -933,6 +945,34 @@ function SettingsPanel({ settings, mutate, dna }) {
               <p>5. Test the connection using the button above</p>
             </AlertDescription>
           </Alert>
+        </div>
+
+        <Separator />
+
+        <div className="flex flex-col gap-3 text-xs">
+          <h3 className="text-[10px] uppercase tracking-wide text-muted-foreground">4H FVG Alerts</h3>
+          <label className="flex cursor-pointer items-start gap-2">
+            <Switch
+              checked={!!(settings.fvgAlerts || {}).enabled}
+              onCheckedChange={(v) => setFvg("enabled", !!v)}
+              aria-label="Enable FVG alerts"
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="font-medium text-foreground">Send Telegram alerts for 4H FVG touches</span>
+              <span className="leading-relaxed text-muted-foreground">
+                When enabled, you&apos;ll receive Telegram messages when price touches a Fair Value Gap zone on the 4H timeframe.
+                Works with EUR/USD, USD/JPY, USD/CAD, XAU/USD, GBP/USD via Twelve Data.
+              </span>
+            </span>
+          </label>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <a href="/alert4hfvg" title="Open 4H FVG dashboard">
+                <Zap className="size-3.5" />
+                Open FVG Dashboard
+              </a>
+            </Button>
+          </div>
         </div>
 
         <Separator />
