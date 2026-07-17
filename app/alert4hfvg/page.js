@@ -32,14 +32,11 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 
 /* ─── Color scheme per pair ─── */
 const PAIR_STYLES = {
-  "EUR/USD": { bg: "from-blue-600/15 to-blue-900/5", border: "border-blue-500/25", accent: "text-blue-400" },
-  "USD/JPY": { bg: "from-red-600/15 to-red-900/5", border: "border-red-500/25", accent: "text-red-400" },
-  "USD/CAD": { bg: "from-orange-600/15 to-orange-900/5", border: "border-orange-500/25", accent: "text-orange-400" },
   "XAU/USD": { bg: "from-amber-600/15 to-amber-900/5", border: "border-amber-500/25", accent: "text-amber-400" },
   "GBP/USD": { bg: "from-violet-600/15 to-violet-900/5", border: "border-violet-500/25", accent: "text-violet-400" },
 };
 
-function pairStyle(pair) { return PAIR_STYLES[pair] || PAIR_STYLES["EUR/USD"]; }
+function pairStyle(pair) { return PAIR_STYLES[pair] || PAIR_STYLES["XAU/USD"]; }
 
 /* ─── Alert Banner ─── */
 function AlertBanner({ alert, onDismiss }) {
@@ -295,22 +292,22 @@ export default function Alert4HFVG() {
         candleData={chartPair ? scanMap[chartPair]?.candleData || null : null}
       />
 
-      {/* ─── Pair Cards (5-col grid) ─── */}
-      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        {["EUR/USD", "USD/JPY", "USD/CAD", "XAU/USD", "GBP/USD"].map((pair) => (
+      {/* ─── Pair Cards ─── */}
+      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {["XAU/USD", "GBP/USD"].map((pair) => (
           <PairCard key={pair} pair={pair} scan={scanMap[pair]} onChartClick={setChartPair} />
         ))}
 
         {/* ─── Status Summary ─── */}
-        <Card className="border-border/50 sm:col-span-2 lg:col-span-3 xl:col-span-5">
+        <Card className="border-border/50 sm:col-span-2">
           <CardHeader className="border-b border-border py-3">
             <CardTitle className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               <Activity className="size-3.5" /> Scan Status
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-              {["EUR/USD", "USD/JPY", "USD/CAD", "XAU/USD", "GBP/USD"].map((pair) => {
+            <div className="grid grid-cols-2 gap-3">
+              {["XAU/USD", "GBP/USD"].map((pair) => {
                 const s = scanMap[pair];
                 const fresh = s?.freshFVG;
                 const touched = s?.touchedNow;

@@ -18,9 +18,6 @@ const alertedKeys = new Set();
 
 // FVG pairs definition
 const FVG_PAIRS = [
-  { name: "EUR/USD", display: "EUR/USD", tvSymbol: "FX:EURUSD" },
-  { name: "USD/JPY", display: "USD/JPY", tvSymbol: "FX:USDJPY" },
-  { name: "USD/CAD", display: "USD/CAD", tvSymbol: "FX:USDCAD" },
   { name: "XAU/USD", display: "XAU/USD", tvSymbol: "TVC:GOLD" },
   { name: "GBP/USD", display: "GBP/USD", tvSymbol: "FX:GBPUSD" },
 ];
