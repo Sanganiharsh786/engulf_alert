@@ -15,5 +15,5 @@ export async function middleware(req) {
 }
 
 export const config = {
-  matcher: ["/", "/backtest", "/crt", "/totalalerts", "/alert4hfvg"],
+  matcher: ["/", "/backtest", "/crt", "/totalalerts", "/alert4hfvg", "/backtest-zone-origin"],
 };
