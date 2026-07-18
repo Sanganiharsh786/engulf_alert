@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/backtest/spinner";
 import { TradesTable } from "@/components/backtest/trades-table";
+import { TradeChartDialog } from "@/components/backtest/trade-chart-dialog";
 import { cn } from "@/lib/utils";
 import { useToast } from "../toast";
 import { fmt } from "@/components/backtest/utils";
@@ -41,6 +42,7 @@ export default function ZoneOriginBacktestPage() {
   const [days, setDays] = useState(30);
   const [rrRatio, setRrRatio] = useState("");
   const [debugMode, setDebugMode] = useState(false);
+  const [selectedTrade, setSelectedTrade] = useState(null);
   const toast = useToast();
 
   async function runBacktest() {
@@ -328,7 +330,7 @@ export default function ZoneOriginBacktestPage() {
 
           {/* Trades table */}
           {tradeList.length > 0 ? (
-            <TradesTable trades={tradeList} onTradeClick={() => {}} />
+            <TradesTable trades={tradeList} onTradeClick={setSelectedTrade} />
           ) : (
             <p className="py-8 text-center text-sm text-muted-foreground">
               No trades found for this period.
@@ -352,6 +354,9 @@ export default function ZoneOriginBacktestPage() {
           )}
         </div>
       )}
+
+      {/* Trade chart dialog — TradingView chart + risk/reward, same as backtest */}
+      <TradeChartDialog trade={selectedTrade} onClose={() => setSelectedTrade(null)} />
     </main>
   );
 }

@@ -729,6 +729,11 @@ function SettingsPanel({ settings, mutate, dna }) {
       if (!s.settings.fvgAlerts) s.settings.fvgAlerts = {};
       s.settings.fvgAlerts[field] = value;
     });
+  const setZoneOrigin = (field, value) =>
+    mutate((s) => {
+      if (!s.settings.zoneOriginAlerts) s.settings.zoneOriginAlerts = {};
+      s.settings.zoneOriginAlerts[field] = value;
+    });
   const email = settings.email || {};
   const telegram = settings.telegram || {};
   const risk = settings.risk || {};
@@ -978,6 +983,35 @@ function SettingsPanel({ settings, mutate, dna }) {
               <a href="/alert4hfvg" title="Open 4H FVG dashboard">
                 <Zap className="size-3.5" />
                 Open FVG Dashboard
+              </a>
+            </Button>
+          </div>
+        </div>
+
+        <Separator />
+
+        <div className="flex flex-col gap-3 text-xs">
+          <h3 className="text-[10px] uppercase tracking-wide text-muted-foreground">Zone Origin Engulfing (4H)</h3>
+          <label className="flex cursor-pointer items-start gap-2">
+            <Switch
+              checked={!!(settings.zoneOriginAlerts || {}).enabled}
+              onCheckedChange={(v) => setZoneOrigin("enabled", !!v)}
+              aria-label="Enable zone origin engulfing alerts only"
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="font-medium text-foreground">Only alert on zone-origin engulfings</span>
+              <span className="leading-relaxed text-muted-foreground">
+                When enabled, engulfing alerts fire <strong>only</strong> when the engulfing candle opens on a 4H
+                boundary (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 IST) — the starting point of your 4H
+                support/resistance zone. Engulfings inside the zone on other candles are ignored.
+              </span>
+            </span>
+          </label>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <a href="/backtest-zone-origin" title="Open Zone Origin Engulfing backtest">
+                <BarChart3 className="size-3.5" />
+                Zone Origin Backtest
               </a>
             </Button>
           </div>
