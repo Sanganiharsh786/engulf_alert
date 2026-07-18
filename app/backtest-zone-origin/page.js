@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/backtest/spinner";
+import { TradesTable } from "@/components/backtest/trades-table";
 import { cn } from "@/lib/utils";
 import { useToast } from "../toast";
 import { fmt } from "@/components/backtest/utils";
@@ -249,4 +250,126 @@ export default function ZoneOriginBacktestPage() {
       </div>
 
       {error && (
-        <Alert c
+        <Alert className="mt-4 border-bear/40 bg-bear/10">
+          <AlertDescription className="text-sm text-bear">{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Loading */}
+      {loading && !data && (
+        <div className="mt-16 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+          <Spinner />
+          <p className="text-sm">Running zone-origin backtest…</p>
+        </div>
+      )}
+
+      {/* Results */}
+      {data && summary && (
+        <div className="mt-6 flex flex-col gap-6">
+          {/* Summary stats */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <StatCard label="Win Rate" value={pct(summary.winRate)} accent={summary.winRate >= 50 ? "bull" : "bear"} />
+            <StatCard
+              label="Net R"
+              value={`${summary.netR > 0 ? "+" : ""}${summary.netR}R`}
+              accent={summary.netR > 0 ? "bull" : summary.netR < 0 ? "bear" : "muted"}
+            />
+            <StatCard label="Trades" value={summary.total} sub={`${summary.closedCount} closed`} />
+            <StatCard label="W / L" value={`${summary.winCount} / ${summary.lossCount}`} />
+            <StatCard label="Profit Factor" value={summary.profitFactor} accent={summary.profitFactor >= 1 ? "bull" : "bear"} />
+            <StatCard label="Max Drawdown" value={pct(summary.maxDD)} accent="bear" />
+            <StatCard label="Avg R / trade" value={`${summary.avgRR}R`} />
+            <StatCard label="Avg Win" value={`+${summary.avgWin}R`} accent="bull" />
+            <StatCard label="Avg Loss" value={`-${summary.avgLoss}R`} accent="bear" />
+            <StatCard label="Best Trade" value={`+${round(summary.bestTrade, 2)}R`} accent="bull" />
+            <StatCard label="Worst Trade" value={`${round(summary.worstTrade, 2)}R`} accent="bear" />
+          </div>
+
+          {/* Per-pair breakdown */}
+          {byPair.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">By Pair</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="divide-y divide-border">
+                  {byPair.map((p) => (
+                    <div key={p.pair} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-xs">
+                      <span className="w-20 font-semibold">{p.pair}</span>
+                      <span className="text-muted-foreground">{p.signals} signals</span>
+                      <span className="flex items-center gap-1 text-bull">
+                        <TrendingUp className="size-3.5" /> {p.wins}W
+                      </span>
+                      <span className="flex items-center gap-1 text-bear">
+                        <TrendingDown className="size-3.5" /> {p.losses}L
+                      </span>
+                      <Badge
+                        variant="outline"
+                        className={cn(p.winRate >= 50 ? "border-bull/40 text-bull" : "border-bear/40 text-bear")}
+                      >
+                        {pct(p.winRate)}
+                      </Badge>
+                      <span
+                        className={cn(
+                          "ml-auto font-mono font-bold tnum",
+                          p.netR > 0 ? "text-bull" : p.netR < 0 ? "text-bear" : "text-muted-foreground"
+                        )}
+                      >
+                        {p.netR > 0 ? `+${p.netR}` : p.netR}R
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <Separator />
+
+          {/* Trades table */}
+          {tradeList.length > 0 ? (
+            <TradesTable trades={tradeList} onTradeClick={() => {}} />
+          ) : (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No trades found for this period.
+            </p>
+          )}
+
+          {/* Debug output */}
+          {debugMode && data.debug && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Bug className="size-4" /> Debug Log
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <pre className="max-h-96 overflow-auto rounded-md bg-popover p-3 font-mono text-[11px] text-muted-foreground">
+                  {JSON.stringify(data.debug, null, 2)}
+                </pre>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+    </main>
+  );
+}
+
+function StatCard({ label, value, sub, accent = "default" }) {
+  const accentClass =
+    accent === "bull"
+      ? "text-bull"
+      : accent === "bear"
+      ? "text-bear"
+      : accent === "muted"
+      ? "text-muted-foreground"
+      : "text-foreground";
+  return (
+    <div className="rounded-lg border border-border bg-card p-3">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className={cn("mt-1 font-mono text-lg font-bold tnum", accentClass)}>{value}</div>
+      {sub && <div className="text-[10px] text-muted-foreground">{sub}</div>}
+    </div>
+  );
+}
