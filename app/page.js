@@ -5,12 +5,14 @@ import {
   BarChart3,
   Bell,
   CheckCircle2,
+  Clock,
   ExternalLink,
   ListChecks,
   LogOut,
   Plus,
   RefreshCw,
   Save,
+  Target,
   Trash2,
   X,
   XCircle,
@@ -331,6 +333,12 @@ function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onSc
           <a href="/alert4hfvg" title="4H Fair Value Gap alerts — real-time forex">
             <Zap />
             4H FVG
+          </a>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <a href="/backtest-zone-origin" title="4H Zone Origin Engulfing — only trades at zone starting point">
+            <Target />
+            Zone Origin
           </a>
         </Button>
 
