@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
  */
 
 const REFRESH_MS = 15_000;
+const LIVE_PRICE_REFRESH_MS = 8_000;
 
 function toCandle(r) {
   return {
@@ -165,17 +166,113 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
   const candleRef = useRef(null);
   const volumeRef = useRef(null);
   const fvgPrimitiveRef = useRef(null);
+  const priceLineRef = useRef(null);
+  const prevPriceRef = useRef(null);
   const onFvgsRef = useRef(onFvgs);
   const [error, setError] = useState("");
   const [lastPrice, setLastPrice] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [zones, setZones] = useState([]);
   const [touched, setTouched] = useState(false);
+  const [livePrice, setLivePrice] = useState(null);
+  const [liveUp, setLiveUp] = useState(true);
+  const [liveSource, setLiveSource] = useState(null);
 
   // Keep the latest callback without re-running the chart effect.
   useEffect(() => {
     onFvgsRef.current = onFvgs;
   }, [onFvgs]);
+
+  // ── Live price polling (Yahoo Finance proxy) ─────────────────
+  // Separate from the main candle data polling; fetches real-time
+  // prices from Yahoo Finance every ~8s, updates the price display,
+  // and draws a horizontal "Live" reference line on the chart.
+  //
+  // The horizontal price line shows the current market level relative
+  // to the closed candles — the standard TradingView-style approach.
+  const [liveStreamOffline, setLiveStreamOffline] = useState(false);
+
+  useEffect(() => {
+    // Reset per-pair state when pair changes
+    prevPriceRef.current = null;
+    setLiveStreamOffline(false);
+    let cancelled = false;
+    let interval = null;
+    let lastSuccessfulTs = 0;
+
+    function updatePriceLine(price) {
+      if (!candleRef.current) return;
+      try {
+        candleRef.current.removePriceLine(priceLineRef.current);
+      } catch { /* ignore */ }
+      priceLineRef.current = candleRef.current.createPriceLine({
+        price,
+        color: "#F0B90B",
+        lineWidth: 1,
+        lineStyle: 2, // Dashed
+        axisLabelVisible: true,
+        title: "Live",
+      });
+    }
+
+    async function fetchLivePrice() {
+      try {
+        const res = await fetch("/api/fvg-live");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled || !data.prices) return;
+
+        const entry = data.prices[pair];
+        if (!entry || entry.price == null) return;
+
+        const price = entry.price;
+
+        // Track direction (up/down from previous tick)
+        if (prevPriceRef.current != null) {
+          setLiveUp(price >= prevPriceRef.current);
+        }
+        prevPriceRef.current = price;
+
+        setLivePrice(price);
+        setLiveSource(entry.marketState === "REGULAR" ? "Yahoo Finance" : entry.marketState || "Yahoo Finance");
+        setLastPrice(price);
+        setLastUpdate(Date.now());
+
+        // Draw / update the horizontal reference line on the chart
+        updatePriceLine(price);
+
+        // Track successful fetches for offline detection
+        lastSuccessfulTs = Date.now();
+        setLiveStreamOffline(false);
+      } catch { /* best-effort live price */ }
+    }
+
+    // Offline detection: if no successful fetch for 30s, show indicator
+    const offlineCheck = setInterval(() => {
+      if (lastSuccessfulTs > 0 && Date.now() - lastSuccessfulTs > 30_000) {
+        setLiveStreamOffline(true);
+      }
+    }, 5_000);
+
+    // Small delay to let the main chart initialise first
+    const startTimer = setTimeout(() => {
+      fetchLivePrice();
+      interval = setInterval(fetchLivePrice, LIVE_PRICE_REFRESH_MS);
+    }, 2_000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(startTimer);
+      clearInterval(offlineCheck);
+      if (interval) clearInterval(interval);
+      // Clean up price line
+      if (candleRef.current && priceLineRef.current) {
+        try { candleRef.current.removePriceLine(priceLineRef.current); } catch {}
+      }
+      priceLineRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pair]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -369,9 +466,15 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
           LIVE
         </span>
         <span className="rounded-md border border-border bg-card px-2 py-0.5 text-muted-foreground">{tf}</span>
-        {lastPrice != null && (
-          <span className="font-mono font-semibold tnum text-foreground">
-            {Number(lastPrice).toLocaleString("en-US", { minimumFractionDigits: 5, maximumFractionDigits: 5 })}
+        {livePrice != null && (
+          <span className={cn(
+            "font-mono font-semibold tnum transition-colors duration-300",
+            liveUp ? "text-bull" : "text-bear"
+          )}>
+            {Number(livePrice).toLocaleString("en-US", { minimumFractionDigits: 5, maximumFractionDigits: 5 })}
+            <span className="ml-1 text-[10px] opacity-60">
+              {liveUp ? "▲" : "▼"}
+            </span>
           </span>
         )}
         {zones.length > 0 && (
@@ -387,6 +490,9 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
         {lastUpdate && (
           <span className="ml-auto text-muted-foreground/60">
             {new Date(lastUpdate).toLocaleTimeString()}
+            <span className="ml-1.5 text-[10px]">
+              {livePrice ? "· streaming" : ""}
+            </span>
           </span>
         )}
       </div>
@@ -411,6 +517,34 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
               </span>
             );
           })}
+        </div>
+      )}
+
+      {/* Live price reference — only shown when streaming is active */}
+      {livePrice != null && (
+        <div className={cn(
+          "flex items-center gap-2 rounded-md border px-2.5 py-1 text-[10px]",
+          liveStreamOffline
+            ? "border-muted/30 bg-muted/5"
+            : "border-gold/25 bg-gold/5"
+        )}>
+          <span className={cn(
+            "size-1.5 rounded-full",
+            liveStreamOffline ? "bg-muted-foreground/40" : "animate-pulse bg-gold"
+          )} />
+          <span className={cn(
+            "font-mono font-semibold",
+            liveStreamOffline ? "text-muted-foreground" : "text-gold"
+          )}>
+            {Number(livePrice).toLocaleString("en-US", { minimumFractionDigits: 5, maximumFractionDigits: 5 })}
+          </span>
+          <span className="text-muted-foreground/60">
+            {liveStreamOffline ? "offline" : (liveSource || "Yahoo Finance")}
+          </span>
+          <span className="text-muted-foreground/40">·</span>
+          <span className={cn("font-mono", liveUp ? "text-bull" : "text-bear")}>
+            {liveUp ? "▲" : "▼"}
+          </span>
         </div>
       )}
 
