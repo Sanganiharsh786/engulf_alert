@@ -11,8 +11,8 @@ export const dynamic = "force-dynamic";
 const DEFAULT_TF = "4h";
 
 // ── Server-side cache ────────────────────────────────────────────
-// Twelve Data free tier: 800 req/day, 8 req/min.
-// Cache lives ~60s so live-polling doesn't burn the daily budget.
+// Binance public mirror is free with generous limits; a short cache keeps
+// live-polling cheap and smooths bursts.
 const CACHE_TTL_MS = 150_000;
 
 // More candles for smaller timeframes so the chart has enough history to detect FVGs

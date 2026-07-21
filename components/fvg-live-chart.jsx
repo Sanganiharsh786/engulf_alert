@@ -190,9 +190,9 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
     onFvgsRef.current = onFvgs;
   }, [onFvgs]);
 
-  // ── Live price polling (Yahoo Finance proxy) ─────────────────
+  // ── Live price polling (Binance ticker) ──────────────────────
   // Separate from the main candle data polling; fetches real-time
-  // prices from Yahoo Finance every ~8s, updates the price display,
+  // prices from Binance every ~8s, updates the price display,
   // and draws a horizontal "Live" reference line on the chart.
   //
   // The horizontal price line shows the current market level relative
@@ -241,7 +241,7 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
         prevPriceRef.current = price;
 
         setLivePrice(price);
-        setLiveSource(entry.marketState === "REGULAR" ? "Yahoo Finance" : entry.marketState || "Yahoo Finance");
+        setLiveSource(entry.marketState === "REGULAR" ? "Binance" : entry.marketState || "Binance");
         setLastPrice(price);
         setLastUpdate(Date.now());
 
