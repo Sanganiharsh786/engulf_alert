@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchAllPairs } from "@/lib/oanda";
+import { fetchFvgData, FVG_PAIRS } from "@/lib/paxgFeed";
 import { detectFVG, candleTouchesFVG, toCandle, scanHistoryForFVG } from "@/lib/fvg";
 import { closedCandles } from "@/lib/engulfing";
 import { tfSeconds } from "@/lib/market";
@@ -16,17 +16,13 @@ const CANDLE_COUNT = { "5m": 200, "15m": 200, "30m": 150, "1h": 120, "4h": 120 }
 // Store alerted FVG keys in memory (per server instance).
 const alertedKeys = new Set();
 
-// FVG pairs definition
-const FVG_PAIRS = [
-  { name: "XAU/USD", display: "XAU/USD", tvSymbol: "TVC:GOLD" },
-  { name: "GBP/USD", display: "GBP/USD", tvSymbol: "FX:GBPUSD" },
-];
+// FVG pairs definition comes from the shared feed module (PAXG/USDT).
 
 // Shared scan logic for both GET and POST.
 // When dryRun is true, alerts are detected but not persisted to alertedKeys.
 async function runFvgScan({ dryRun = false, tf = DEFAULT_TF } = {}) {
   const count = CANDLE_COUNT[tf] || 120;
-  const { results, errors } = await fetchAllPairs(tf, count);
+  const { results, errors } = await fetchFvgData(tf, count);
 
   const scans = [];
   const newAlerts = [];

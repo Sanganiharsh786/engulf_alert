@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchTwelveData } from "@/lib/oanda";
+import { fetchFvgData, FVG_PAIRS, FVG_PAIR_NAMES } from "@/lib/paxgFeed";
 import { detectFVG, toCandle, scanHistoryForFVG } from "@/lib/fvg";
 import { closedCandles } from "@/lib/engulfing";
 import { tfSeconds } from "@/lib/market";
@@ -54,11 +54,11 @@ export async function GET(req) {
       });
     }
 
-    // Fetch fresh data from Twelve Data (batch returns both pairs)
-    const { results, errors } = await fetchTwelveData(tf, count);
+    // Fetch fresh data from Binance (PAXG/USDT)
+    const { results, errors } = await fetchFvgData(tf, count);
 
     // Build per-pair candle + FVG data
-    const pairs = ["XAU/USD", "GBP/USD"];
+    const pairs = FVG_PAIR_NAMES;
     const scans = [];
 
     for (const name of pairs) {
@@ -111,7 +111,7 @@ export async function GET(req) {
         touchedNow,
         candles: rows.length,
         scannedAt: Date.now(),
-        tvSymbol: name === "XAU/USD" ? "TVC:GOLD" : "FX:GBPUSD",
+        tvSymbol: FVG_PAIRS.find((p) => p.name === name)?.tvSymbol || "",
       });
     }
 

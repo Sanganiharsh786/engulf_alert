@@ -5,7 +5,7 @@ import { detectEngulfing } from "@/lib/engulfing";
 import { tradingViewLink } from "@/lib/scanner";
 import { fetchOHLCV } from "@/lib/market";
 import { currentUser } from "@/lib/session";
-import { testDataConnection } from "@/lib/oanda";
+import { testFvgConnection } from "@/lib/paxgFeed";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,18 +69,18 @@ export async function POST() {
     checks.push({ name: "Email login", pass: false, detail: String(e.message || e) });
   }
 
-  // 6 - Twelve Data source (for 4H FVG alerts, real-time forex)
+  // 6 - PAXG data source (for 4H FVG alerts on PAXG/USDT via Binance)
   try {
-    const tdResult = await testDataConnection();
+    const tdResult = await testFvgConnection();
     checks.push({
-      name: "Twelve Data",
+      name: "PAXG feed",
       pass: tdResult.ok,
       detail: tdResult.ok
-        ? `Connected to Twelve Data · ${tdResult.pairs?.length || 0} pairs loaded`
-        : tdResult.error || "API key not configured",
+        ? `Connected to Binance · ${tdResult.pairs?.length || 0} pair(s) loaded`
+        : tdResult.error || "PAXG feed unavailable",
     });
   } catch (e) {
-    checks.push({ name: "Twelve Data", pass: false, detail: String(e.message || e) });
+    checks.push({ name: "PAXG feed", pass: false, detail: String(e.message || e) });
   }
 
   return NextResponse.json({ checks });

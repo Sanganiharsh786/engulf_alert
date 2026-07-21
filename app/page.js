@@ -974,7 +974,7 @@ function SettingsPanel({ settings, mutate, dna }) {
               <span className="font-medium text-foreground">Send Telegram alerts for 4H FVG touches</span>
               <span className="leading-relaxed text-muted-foreground">
                 When enabled, you&apos;ll receive Telegram messages when price touches a Fair Value Gap zone on the 4H timeframe.
-                Works with EUR/USD, USD/JPY, USD/CAD, XAU/USD, GBP/USD via Twelve Data.
+                Tracks PAX Gold (PAXG/USDT) via Binance.
               </span>
             </span>
           </label>

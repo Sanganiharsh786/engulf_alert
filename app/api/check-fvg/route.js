@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
-import { testDataConnection } from "@/lib/oanda";
+import { testFvgConnection } from "@/lib/paxgFeed";
 import { currentUser } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Health check for the FVG data source (Twelve Data).
+// Health check for the FVG data source (Binance PAXG/USDT).
 // Requires login (protected via middleware).
 export async function GET() {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   try {
-    const result = await testDataConnection();
+    const result = await testFvgConnection();
     return NextResponse.json({ ...result, user });
   } catch (e) {
     return NextResponse.json(

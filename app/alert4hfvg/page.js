@@ -28,13 +28,18 @@ const fmt = (n) =>
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
+/* ─── Watched FVG pairs ─── */
+const FVG_PAIRS = ["PAXG/USDT"];
+
 /* ─── Color scheme per pair ─── */
 const PAIR_STYLES = {
-  "XAU/USD": { bg: "from-amber-600/15 to-amber-900/5", border: "border-amber-500/25", accent: "text-amber-400" },
-  "GBP/USD": { bg: "from-violet-600/15 to-violet-900/5", border: "border-violet-500/25", accent: "text-violet-400" },
+  "PAXG/USDT": { bg: "from-amber-600/15 to-amber-900/5", border: "border-amber-500/25", accent: "text-amber-400" },
 };
 
-function pairStyle(pair) { return PAIR_STYLES[pair] || PAIR_STYLES["XAU/USD"]; }
+function pairStyle(pair) { return PAIR_STYLES[pair] || PAIR_STYLES["PAXG/USDT"]; }
+
+/* PAXG trades ~$3–4k on Binance — show 2 decimals, not forex 5. */
+const priceDigits = (pair) => (pair && pair.includes("USDT") ? 2 : 5);
 
 /* ─── Alert Banner ─── */
 function AlertBanner({ alert, onDismiss }) {
@@ -142,12 +147,12 @@ function PairCard({ pair, scan, onChartClick, tf }) {
                 <h3 className="text-lg font-bold tracking-tight">{pair}</h3>
                 {price && (
                   <span className={cn("font-mono text-sm font-semibold", s.accent)}>
-                    {Number(price).toLocaleString("en-US", { minimumFractionDigits: 5, maximumFractionDigits: 5 })}
+                    {Number(price).toLocaleString("en-US", { minimumFractionDigits: priceDigits(pair), maximumFractionDigits: priceDigits(pair) })}
                   </span>
                 )}
               </div>
               <p className="text-[11px] text-muted-foreground flex items-center gap-2">
-                <span>{tf} · Twelve Data</span>
+                <span>{tf} · Binance</span>
               </p>
             </div>
           </div>
@@ -351,21 +356,21 @@ export default function Alert4HFVG() {
       />
 
       {/* ─── Pair Cards with Live Charts ─── */}
-      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
-        {["XAU/USD", "GBP/USD"].map((pair) => (
+      <div className="mt-5 grid grid-cols-1 gap-5">
+        {FVG_PAIRS.map((pair) => (
           <PairCard key={pair} pair={pair} scan={scanMap[pair]} onChartClick={setChartPair} tf={tf} />
         ))}
 
         {/* ─── Status Summary ─── */}
-        <Card className="border-border/50 lg:col-span-2">
+        <Card className="border-border/50">
           <CardHeader className="border-b border-border py-3">
             <CardTitle className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               <Activity className="size-3.5" /> Scan Status
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4">
-            <div className="grid grid-cols-2 gap-3">
-              {["XAU/USD", "GBP/USD"].map((pair) => {
+            <div className={cn("grid gap-3", FVG_PAIRS.length > 1 ? "grid-cols-2" : "grid-cols-1")}>
+              {FVG_PAIRS.map((pair) => {
                 const s = scanMap[pair];
                 const fresh = s?.freshFVG;
                 const touched = s?.touchedNow;
@@ -415,7 +420,7 @@ export default function Alert4HFVG() {
           <p><strong className="text-bull">Bullish FVG:</strong> Candle 3&apos;s low is above Candle 1&apos;s high → support zone.</p>
           <p><strong className="text-bear">Bearish FVG:</strong> Candle 3&apos;s high is below Candle 1&apos;s low → resistance zone.</p>
           <p><strong>FVG Touch Alert:</strong> Fires when price returns into the gap zone.</p>
-          <p className="text-gold">💡 Live chart updates every 15s via cached Twelve Data. Full FVG scan runs every few minutes. Enable Telegram alerts from Dashboard → Settings → FVG Alerts.</p>
+          <p className="text-gold">💡 Live chart updates every 15s via cached Binance data (PAXG/USDT). Full FVG scan runs every few minutes. Enable Telegram alerts from Dashboard → Settings → FVG Alerts.</p>
         </div>
       </details>
     </div>

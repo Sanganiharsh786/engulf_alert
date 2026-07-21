@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
  *
  * Polls /api/fvg-candles every `refreshMs` ms and streams the latest
  * candle data + FVG zones into the chart — same visual style as the
- * dashboard's LiveChart but tailored for forex FVG pairs via Twelve Data.
+ * dashboard's LiveChart but tailored for PAXG/USDT FVG via Binance.
  *
  * FVG zones are rendered as real filled boxes (series primitives) that are
  * anchored to the gap's time range and extend to the right edge, updating
@@ -107,7 +107,8 @@ class FVGRenderer {
         ctx.setLineDash([]);
 
         // Zone value label pinned to the left of the box.
-        const label = `${z.type === "bullish" ? "▲" : "▼"} ${z.high.toFixed(5)} – ${z.low.toFixed(5)}`;
+        const zdp = z.dp ?? 2;
+        const label = `${z.type === "bullish" ? "▲" : "▼"} ${z.high.toFixed(zdp)} – ${z.low.toFixed(zdp)}`;
         const fontPx = 10 * vRatio;
         ctx.font = `${fontPx}px ui-sans-serif, system-ui, sans-serif`;
         ctx.textBaseline = "bottom";
@@ -177,6 +178,12 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
   const [livePrice, setLivePrice] = useState(null);
   const [liveUp, setLiveUp] = useState(true);
   const [liveSource, setLiveSource] = useState(null);
+
+  // Price decimals: crypto USDT pairs (e.g. PAXG/USDT ~$3–4k) use 2 dp;
+  // JPY forex 3; other forex 5.
+  const dp = pair.includes("USDT") ? 2 : pair.includes("JPY") ? 3 : 5;
+  const fmtPrice = (n) =>
+    Number(n).toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
 
   // Keep the latest callback without re-running the chart effect.
   useEffect(() => {
@@ -331,8 +338,8 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
           wickDownColor: "#ef5350",
           priceFormat: {
             type: "price",
-            precision: pair.includes("JPY") ? 3 : 5,
-            minMove: pair.includes("JPY") ? 0.001 : 0.00001,
+            precision: dp,
+            minMove: Math.pow(10, -dp),
           },
         });
         candleRef.current = cs;
@@ -385,6 +392,7 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
               else zoneList.push(freshZone);
             }
 
+            zoneList.forEach((z) => { z.dp = dp; });
             fvgPrimitiveRef.current?.setZones(zoneList);
 
             setLastPrice(scan.currentPrice);
@@ -471,7 +479,7 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
             "font-mono font-semibold tnum transition-colors duration-300",
             liveUp ? "text-bull" : "text-bear"
           )}>
-            {Number(livePrice).toLocaleString("en-US", { minimumFractionDigits: 5, maximumFractionDigits: 5 })}
+            {fmtPrice(livePrice)}
             <span className="ml-1 text-[10px] opacity-60">
               {liveUp ? "▲" : "▼"}
             </span>
@@ -512,7 +520,7 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
                 )}
                 title={`${z.type} FVG zone`}
               >
-                {isBull ? "▲" : "▼"} {z.high.toFixed(5)}–{z.low.toFixed(5)}
+                {isBull ? "▲" : "▼"} {z.high.toFixed(dp)}–{z.low.toFixed(dp)}
                 {z.fresh && <span className="opacity-70">NEW</span>}
               </span>
             );
@@ -536,10 +544,10 @@ export function FVGLiveChart({ pair, tf = "4h", refreshMs = REFRESH_MS, height =
             "font-mono font-semibold",
             liveStreamOffline ? "text-muted-foreground" : "text-gold"
           )}>
-            {Number(livePrice).toLocaleString("en-US", { minimumFractionDigits: 5, maximumFractionDigits: 5 })}
+            {fmtPrice(livePrice)}
           </span>
           <span className="text-muted-foreground/60">
-            {liveStreamOffline ? "offline" : (liveSource || "Yahoo Finance")}
+            {liveStreamOffline ? "offline" : (liveSource || "Binance")}
           </span>
           <span className="text-muted-foreground/40">·</span>
           <span className={cn("font-mono", liveUp ? "text-bull" : "text-bear")}>
