@@ -13,6 +13,7 @@ import {
   Plus,
   RefreshCw,
   Save,
+  Sigma,
   Target,
   Trash2,
   X,
@@ -346,6 +347,12 @@ function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onSc
           <a href="/backtest-liquidity" title="Liquidity Sweep — engulfing at level, stop beyond swing, target next liquidity">
             <Droplets />
             Liquidity Sweep
+          </a>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <a href="/backtest-fib" title="Fibonacci 0.70–0.786 retracement strategy — swings, fib zone, confirmation, RR comparison">
+            <Sigma />
+            Fib 0.7–0.786
           </a>
         </Button>
 

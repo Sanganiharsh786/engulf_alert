@@ -1,0 +1,181 @@
+# Fibonacci 0.70–0.786 Retracement Strategy
+
+A simple, rule-based mean-reversion-into-trend strategy: find a clean impulse,
+wait for price to retrace **deep** into the 0.700–0.786 Fibonacci zone, require a
+**price-action confirmation**, then trade with a structural stop and a
+configurable target. It ships with a full backtester, per-direction stats, and an
+RR comparison table so you can judge whether the setup has a real edge instead of
+assuming 1:2 is best.
+
+> **This is a research tool, not a promise of profit.** The backtester exists to
+> tell you objectively whether the rules have an edge on your data.
+
+## Where the code lives
+
+The suggested `strategy/*.ts` layout from the brief is mapped onto this repo's
+flat JavaScript `lib/` convention:
+
+| Spec module            | This repo                                             |
+| ---------------------- | ---------------------------------------------------- |
+| `config.ts`            | `DEFAULT_CONFIG` / `fibConfig()` in `lib/fibStrategy.js` |
+| `swingDetection.ts`    | `isPivotHigh` / `isPivotLow` in `lib/fibStrategy.js` |
+| `fibonacci.ts`         | `fibZoneLong` / `fibZoneShort` / `fibExtension*`     |
+| `confirmation.ts`      | `confirmLong` / `confirmShort` + candle checks       |
+| `impulseDetection.ts`  | `maybeCreate()` in `lib/fibBacktest.js`              |
+| `tradeSetup.ts`        | setup state machine in `backtestPair()`             |
+| `riskManagement.ts`    | `finaliseTrade` / `sizeTrades` / `computeStats`      |
+| `tradeManager.ts`      | `resolve()` (walk-forward TP/SL)                    |
+| `backtester.ts`        | `backtestPair` / `runFibBacktest`                   |
+| `statistics.ts`        | `computeStats` / `rrComparison`                     |
+
+- **API**: `app/api/backtest-fib/route.js`
+- **UI**: `app/backtest-fib/page.js` (config panel, stats dashboard, LONG/SHORT
+  split, RR comparison, trade history, per-trade chart) — reachable from the
+  dashboard via the **Fib 0.7–0.786** button.
+
+## Strategy rules
+
+### LONG
+1. **Impulse** — a confirmed swing **Low → High** (up move) large enough to pass
+   the impulse filter.
+2. **Fib zone** — measured Low(0.0) → High(1.0); the entry zone is between
+   `0.700` (higher price) and `0.786` (lower price).
+3. **Retrace** — price must trade back **into** that zone.
+4. **Confirmation** — a bullish price-action signal inside the zone (default:
+   bullish engulfing).
+5. **Entry** — confirmation candle close (or, optionally, the break of the
+   confirmation candle high).
+
+### SHORT
+The exact mirror: impulse High → Low, retrace **up** into the zone, bearish
+confirmation, entry on close (or break of the confirmation candle low).
+
+## Entry rules
+
+- `entryMode = "close"` — enter at the confirmation candle's close.
+- `entryMode = "break"` — after a confirmation candle, enter only if a later
+  candle breaks its high (long) / low (short).
+- **One trade per setup.** Each Fibonacci setup runs a lifecycle and fires at
+  most once:
+  `IDENTIFIED → FIB_ZONE_CREATED → PRICE_ENTERED_ZONE → WAITING_CONFIRMATION →
+  TRADE_TRIGGERED → TP/SL → COMPLETED`, or `INVALIDATED` / expired.
+
+## Exit rules
+
+**Stop loss**
+- `stopLossMode = "SWING"` — beyond the origin swing (below the swing low for
+  longs, above the swing high for shorts), padded by `slBufferPercent`.
+- `stopLossMode = "ZONE"` — beyond the fib zone edge instead.
+
+**Take profit**
+- `tpMode = "RR"` — `entry ± rrRatio × risk`.
+- `tpMode = "SWING"` — the opposite origin swing (the impulse extreme).
+- `tpMode = "FIB_EXT"` — a Fibonacci extension (`1.0`, `1.272`, `1.618`).
+
+**Invalidation** — before a trade triggers, the setup is cancelled if price
+breaks the origin swing (below the swing low for a long, above the swing high for
+a short), or if it never triggers within `zoneExpiryBars`.
+
+## Fibonacci calculation
+
+For a long with swing low `L` and swing high `H` (range `= H − L`):
+
+```
+fib(x)      = H − x·range          # retracement, x in [0,1]
+zone top    = fib(0.700)           # higher price
+zone bottom = fib(0.786)           # lower price
+extension E = L + E·range          # 1.0 = H, 1.272, 1.618 ...
+```
+
+Shorts invert: `fib(x) = L + x·range`, extension `= H − E·range`.
+
+## Swing detection (no repaint)
+
+A pivot high at index `k` requires `pivotLeft` lower highs before it and
+`pivotRight` lower highs after it (lows are the mirror). Because a pivot needs
+`pivotRight` candles to its right, it is only **confirmed** at candle
+`k + pivotRight` — the backtester does not "see" or act on it before then, so
+confirmed swings never move historically.
+
+## Confirmation engine
+
+`bullish/bearishEngulfing`, `bullish/bearishRejection` (long dominant wick,
+close in the far half), `bullish/bearishPinBar` (small body, one dominant wick),
+`breakOfHigh` / `breakOfLow`. Combine with `_OR_`
+(e.g. `ENGULFING_OR_REJECTION`) or use `ANY`.
+
+## Risk calculation & position sizing
+
+- Risk per trade = `riskPercent` of equity (default **1%**). No martingale —
+  size never scales up after a loss.
+- The equity curve compounds: each trade risks `riskPercent` of *current*
+  equity; PnL in R is `reward/risk` on a win and `−1` on a loss.
+- Displayed lot size = `riskAmount / (slPips × pipValuePerLot)` using the pair's
+  `pipSize` / `contractSize` (FundingPips/MT5 convention), off **initial**
+  capital for a stable per-row figure.
+
+## Backtesting methodology
+
+- Uses only **closed** candles (the forming candle is dropped — no repaint).
+- Swing confirmation respects `pivotRight` (no lookahead).
+- Confirmation reads only the current and previous candle.
+- TP/SL resolution walks strictly forward from the entry candle; if a bar
+  touches **both** stop and target, it is counted as a **loss** (worst case).
+- **RR comparison** re-prices every triggered trade at `1:1.5 … 1:5` using the
+  *same* entries and stops, then re-resolves — an apples-to-apples test of which
+  RR would have performed best.
+
+## Statistics reported
+
+Total / winning / losing / open trades, win rate, profit factor, net profit
+($ and %), net R, average R, expectancy, average win/loss (R), largest win/loss,
+max drawdown ($ and %), max consecutive wins/losses, and a separate
+**LONG vs SHORT** breakdown.
+
+## Configuration
+
+All defaults live in `DEFAULT_CONFIG` (`lib/fibStrategy.js`) and every value is
+overridable from the UI config panel or the API body:
+
+```js
+{
+  fibUpper: 0.700, fibLower: 0.786,
+  pivotLeft: 5, pivotRight: 5,
+  minimumImpulsePercent: 1, minimumImpulseATR: 0,
+  confirmationMode: "ENGULFING",          // + REJECTION | PINBAR | BREAK | ANY | *_OR_*
+  entryMode: "close",                      // close | break
+  stopLossMode: "SWING",                   // SWING | ZONE
+  slBufferPercent: 0.1,
+  tpMode: "RR",                            // RR | SWING | FIB_EXT
+  rrRatio: 2, fibExtension: 1.618,
+  useTrendFilter: false, emaFast: 50, emaSlow: 200,
+  useATRFilter: false, atrPeriod: 14, atrMin: 0, atrMax: 0,
+  useMarketStructureFilter: false,
+  allowLong: true, allowShort: true,
+  riskPercent: 1, initialCapital: 10000, zoneExpiryBars: 150,
+}
+```
+
+## Known limitations
+
+- **Bar-level fills**, not tick-level: intrabar order of stop vs target is
+  unknown, so ties are booked as losses (conservative). Slippage, spread, and
+  commissions are **not** modelled.
+- Entries/exits assume you can transact at the candle close (or exact break
+  level) — real fills may differ.
+- Runs on every pair in your store using the Binance data mirror; instruments
+  without a feed are skipped and reported under `errors`.
+- Optional filters (trend/ATR/market-structure) are intentionally simple; the
+  market-structure check only inspects the two most recent confirmed pivots.
+- No walk-forward optimisation or out-of-sample split is automated — vary the
+  date range yourself and confirm any filter helps *out of sample* before
+  trusting it (§25).
+
+## How to use
+
+1. Dashboard → **Fib 0.7–0.786**.
+2. Pick a timeframe, history length, and confirmation/TP mode; hit **Run
+   Backtest**.
+3. Read the stats and the **RR comparison** table; click any trade for its
+   TradingView / SVG chart with entry, stop, and target.
+4. Only enable filters if they improve results *out of sample*. Start simple.
