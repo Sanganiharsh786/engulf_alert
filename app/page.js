@@ -6,6 +6,7 @@ import {
   Bell,
   CheckCircle2,
   Clock,
+  Droplets,
   ExternalLink,
   ListChecks,
   LogOut,
@@ -339,6 +340,12 @@ function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onSc
           <a href="/backtest-zone-origin" title="4H Zone Origin Engulfing — only trades at zone starting point">
             <Target />
             Zone Origin
+          </a>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <a href="/backtest-liquidity" title="Liquidity Sweep — engulfing at level, stop beyond swing, target next liquidity">
+            <Droplets />
+            Liquidity Sweep
           </a>
         </Button>
 
@@ -734,6 +741,11 @@ function SettingsPanel({ settings, mutate, dna }) {
       if (!s.settings.zoneOriginAlerts) s.settings.zoneOriginAlerts = {};
       s.settings.zoneOriginAlerts[field] = value;
     });
+  const setLiquiditySweep = (field, value) =>
+    mutate((s) => {
+      if (!s.settings.liquiditySweepAlerts) s.settings.liquiditySweepAlerts = {};
+      s.settings.liquiditySweepAlerts[field] = value;
+    });
   const email = settings.email || {};
   const telegram = settings.telegram || {};
   const risk = settings.risk || {};
@@ -1012,6 +1024,37 @@ function SettingsPanel({ settings, mutate, dna }) {
               <a href="/backtest-zone-origin" title="Open Zone Origin Engulfing backtest">
                 <BarChart3 className="size-3.5" />
                 Zone Origin Backtest
+              </a>
+            </Button>
+          </div>
+        </div>
+
+        <Separator />
+
+        <div className="flex flex-col gap-3 text-xs">
+          <h3 className="text-[10px] uppercase tracking-wide text-muted-foreground">Liquidity Sweep</h3>
+          <label className="flex cursor-pointer items-start gap-2">
+            <Switch
+              checked={!!(settings.liquiditySweepAlerts || {}).enabled}
+              onCheckedChange={(v) => setLiquiditySweep("enabled", !!v)}
+              aria-label="Enable liquidity sweep alerts"
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="font-medium text-foreground">Alert on engulfing-at-level with swing stop &amp; liquidity target</span>
+              <span className="leading-relaxed text-muted-foreground">
+                When enabled, you get an alert when an engulfing candle forms at one of your levels. The
+                stop is placed beyond the nearest <strong>swing pivot</strong> (below the swing low for
+                longs, above the swing high for shorts) and the target is the <strong>next opposite
+                liquidity</strong> (nearest prior swing high above for longs, swing low below for shorts).
+                Reward:risk is measured to that liquidity. Runs on every watched pair, including PAX Gold.
+              </span>
+            </span>
+          </label>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <a href="/backtest-liquidity" title="Open Liquidity Sweep backtest">
+                <BarChart3 className="size-3.5" />
+                Liquidity Sweep Backtest
               </a>
             </Button>
           </div>
