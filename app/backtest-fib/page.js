@@ -43,6 +43,30 @@ const DEFAULTS = {
   tpMode: "RR",
   rrRatio: 2,
   fibExtension: 1.618,
+  // multi-target system (§8–§13)
+  useMultiTarget: true,
+  targetMode: "ALL",
+  tp1RR: 2,
+  tp2LiquidityLookback: 60,
+  tp3FibRatio: 0,
+  tp1Percent: 40,
+  tp2Percent: 30,
+  tp3Percent: 30,
+  useBreakEven: false,
+  breakEvenBufferPercent: 0,
+  maxRiskPercent: 0,
+  // trade limits (§14, §23)
+  maxActiveTrades: 1,
+  useMaxTradesPerDay: false,
+  maxTradesPerDay: 3,
+  useMaxDailyLoss: false,
+  maxDailyLossPercent: 3,
+  useMaxConsecutiveLosses: false,
+  maxConsecutiveLosses: 3,
+  // session (§21)
+  sessionFilter: "ALL",
+  customSessionStart: "00:00",
+  customSessionEnd: "24:00",
   useTrendFilter: false,
   emaFast: 50,
   emaSlow: 200,
@@ -228,21 +252,99 @@ export default function FibBacktestPage() {
               value={cfg.confirmationMode}
               onChange={set("confirmationMode")}
               options={[
+                { value: "STRUCTURE", label: "Structure break" },
                 { value: "ENGULFING", label: "Engulfing" },
                 { value: "REJECTION", label: "Rejection" },
                 { value: "PINBAR", label: "Pin bar" },
                 { value: "BREAK", label: "Break of high/low" },
+                { value: "ENGULFING_OR_STRUCTURE", label: "Engulfing or structure" },
                 { value: "ENGULFING_OR_REJECTION", label: "Engulfing or rejection" },
                 { value: "ANY", label: "Any" },
               ]}
             />
             <Sel label="Entry" value={cfg.entryMode} onChange={set("entryMode")} w="w-32" options={[{ value: "close", label: "Confirm close" }, { value: "break", label: "Break of high" }]} />
-            <Sel label="Stop loss" value={cfg.stopLossMode} onChange={set("stopLossMode")} w="w-32" options={[{ value: "SWING", label: "Beyond swing" }, { value: "ZONE", label: "Beyond zone" }]} />
+            <Sel label="Stop loss" value={cfg.stopLossMode} onChange={set("stopLossMode")} w="w-36" options={[{ value: "SWING", label: "Beyond swing" }, { value: "ZONE", label: "Beyond zone" }, { value: "CANDLE", label: "Confirm candle" }]} />
             <Num label="SL buffer %" value={cfg.slBufferPercent} onChange={set("slBufferPercent")} step={0.05} min={0} w="w-24" />
-            <Sel label="Take profit" value={cfg.tpMode} onChange={set("tpMode")} w="w-40" options={[{ value: "RR", label: "Risk/Reward" }, { value: "SWING", label: "Opposite swing" }, { value: "FIB_EXT", label: "Fib extension" }]} />
-            {cfg.tpMode === "RR" && <Num label="RR ratio" value={cfg.rrRatio} onChange={set("rrRatio")} step={0.5} min={0.5} w="w-20" />}
-            {cfg.tpMode === "FIB_EXT" && (
-              <Sel label="Extension" value={cfg.fibExtension} onChange={set("fibExtension")} w="w-24" options={[{ value: 1.0, label: "1.0" }, { value: 1.272, label: "1.272" }, { value: 1.618, label: "1.618" }]} />
+            <Num label="Max risk %" value={cfg.maxRiskPercent} onChange={set("maxRiskPercent")} step={0.5} min={0} w="w-24" />
+            <Chk label="Multi-target (TP1/2/3)" checked={cfg.useMultiTarget} onChange={set("useMultiTarget")} />
+            {!cfg.useMultiTarget && (
+              <>
+                <Sel label="Take profit" value={cfg.tpMode} onChange={set("tpMode")} w="w-40" options={[{ value: "RR", label: "Risk/Reward" }, { value: "SWING", label: "Opposite swing" }, { value: "FIB_EXT", label: "Fib extension" }]} />
+                {cfg.tpMode === "RR" && <Num label="RR ratio" value={cfg.rrRatio} onChange={set("rrRatio")} step={0.5} min={0.5} w="w-20" />}
+                {cfg.tpMode === "FIB_EXT" && (
+                  <Sel label="Extension" value={cfg.fibExtension} onChange={set("fibExtension")} w="w-24" options={[{ value: 1.0, label: "1.0" }, { value: 1.272, label: "1.272" }, { value: 1.618, label: "1.618" }]} />
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Multi-target system (§8–§13) */}
+          {cfg.useMultiTarget && (
+            <div className="flex flex-wrap items-end gap-3 rounded-lg border border-dashed border-border p-3">
+              <Sel
+                label="Target mode"
+                value={cfg.targetMode}
+                onChange={set("targetMode")}
+                w="w-44"
+                options={[
+                  { value: "ALL", label: "All targets" },
+                  { value: "RR", label: "RR only" },
+                  { value: "LIQUIDITY", label: "Liquidity only" },
+                  { value: "FIB", label: "Fib only" },
+                  { value: "RR_LIQ", label: "RR + Liquidity" },
+                  { value: "RR_FIB", label: "RR + Fib" },
+                  { value: "LIQ_FIB", label: "Liquidity + Fib" },
+                ]}
+              />
+              <Num label="TP1 RR" value={cfg.tp1RR} onChange={set("tp1RR")} step={0.5} min={0.5} w="w-20" />
+              <Num label="TP2 liq lookback" value={cfg.tp2LiquidityLookback} onChange={set("tp2LiquidityLookback")} min={5} w="w-28" />
+              <Num label="TP3 fib ratio" value={cfg.tp3FibRatio} onChange={set("tp3FibRatio")} step={0.05} min={0} w="w-24" />
+              <Num label="TP1 %" value={cfg.tp1Percent} onChange={set("tp1Percent")} step={5} min={0} w="w-20" />
+              <Num label="TP2 %" value={cfg.tp2Percent} onChange={set("tp2Percent")} step={5} min={0} w="w-20" />
+              <Num label="TP3 %" value={cfg.tp3Percent} onChange={set("tp3Percent")} step={5} min={0} w="w-20" />
+              <Chk label="Break even after TP1" checked={cfg.useBreakEven} onChange={set("useBreakEven")} />
+              {cfg.useBreakEven && (
+                <Num label="BE buffer %" value={cfg.breakEvenBufferPercent} onChange={set("breakEvenBufferPercent")} step={0.05} min={0} w="w-24" />
+              )}
+              <span className="text-[10px] text-muted-foreground">
+                Allocations are normalised to 100% across the targets that are valid for each trade.
+              </span>
+            </div>
+          )}
+
+          {/* Trade limits + session (§14, §21, §23) */}
+          <div className="flex flex-wrap items-end gap-3 rounded-lg border border-dashed border-border p-3">
+            <Num label="Max active" value={cfg.maxActiveTrades} onChange={set("maxActiveTrades")} min={1} w="w-24" />
+            <Chk label="Max trades/day" checked={cfg.useMaxTradesPerDay} onChange={set("useMaxTradesPerDay")} />
+            {cfg.useMaxTradesPerDay && <Num label="Per day" value={cfg.maxTradesPerDay} onChange={set("maxTradesPerDay")} min={1} w="w-20" />}
+            <Chk label="Max daily loss" checked={cfg.useMaxDailyLoss} onChange={set("useMaxDailyLoss")} />
+            {cfg.useMaxDailyLoss && <Num label="Daily loss %" value={cfg.maxDailyLossPercent} onChange={set("maxDailyLossPercent")} step={0.5} min={0} w="w-24" />}
+            <Chk label="Max consec. losses" checked={cfg.useMaxConsecutiveLosses} onChange={set("useMaxConsecutiveLosses")} />
+            {cfg.useMaxConsecutiveLosses && <Num label="Consec." value={cfg.maxConsecutiveLosses} onChange={set("maxConsecutiveLosses")} min={1} w="w-20" />}
+            <Sel
+              label="Session"
+              value={cfg.sessionFilter}
+              onChange={set("sessionFilter")}
+              w="w-40"
+              options={[
+                { value: "ALL", label: "All sessions" },
+                { value: "LONDON", label: "London" },
+                { value: "NEWYORK", label: "New York" },
+                { value: "LONDON_NY", label: "London + NY" },
+                { value: "CUSTOM", label: "Custom" },
+              ]}
+            />
+            {cfg.sessionFilter === "CUSTOM" && (
+              <>
+                <div className="flex flex-col gap-1">
+                  <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">From (UTC)</Label>
+                  <Input value={cfg.customSessionStart} onChange={(e) => set("customSessionStart")(e.target.value)} className="h-8 w-20 font-mono text-xs" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">To (UTC)</Label>
+                  <Input value={cfg.customSessionEnd} onChange={(e) => set("customSessionEnd")(e.target.value)} className="h-8 w-20 font-mono text-xs" />
+                </div>
+              </>
             )}
           </div>
 
@@ -294,7 +396,19 @@ export default function FibBacktestPage() {
             <StatCard label="Max Streaks" value={`${stats.maxWinStreak}W / ${stats.maxLossStreak}L`} />
             <StatCard label="Largest Win" value={`+${stats.largestWinR}R`} accent="bull" />
             <StatCard label="Largest Loss" value={`${stats.largestLossR}R`} accent="bear" />
+            <StatCard label="TP1 Hit Rate" value={pct(stats.tp1HitRate)} accent="bull" sub={`TP1 = ${cfg.useMultiTarget ? cfg.tp1RR : cfg.rrRatio}R`} />
+            <StatCard label="TP2 Hit Rate" value={pct(stats.tp2HitRate)} accent="bull" sub="Next liquidity" />
+            <StatCard label="TP3 Hit Rate" value={pct(stats.tp3HitRate)} accent="bull" sub="Fib reference" />
+            <StatCard label="SL Hit Rate" value={pct(stats.slHitRate)} accent="bear" sub={stats.breakevens ? `${stats.breakevens} break-even` : undefined} />
           </div>
+
+          {/* Portfolio limit summary */}
+          {data.skipped && (data.skipped.active || data.skipped.perDay || data.skipped.dailyLoss || data.skipped.consecutive) > 0 && (
+            <p className="text-[11px] text-muted-foreground">
+              {data.candidates} candidate setups — skipped by limits: {data.skipped.active} (max active),{" "}
+              {data.skipped.perDay} (per day), {data.skipped.dailyLoss} (daily loss), {data.skipped.consecutive} (consecutive losses).
+            </p>
+          )}
 
           {/* Long / Short split */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

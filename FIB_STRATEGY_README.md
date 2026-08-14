@@ -67,14 +67,53 @@ confirmation, entry on close (or break of the confirmation candle low).
   longs, above the swing high for shorts), padded by `slBufferPercent`.
 - `stopLossMode = "ZONE"` — beyond the fib zone edge instead.
 
-**Take profit**
+**Take profit — multi-target system (default, `useMultiTarget: true`)**
+
+Three targets can run simultaneously with partial exits:
+- **TP1 — fixed RR**: `entry ± tp1RR × risk` (default 1:2).
+- **TP2 — next liquidity**: the nearest confirmed pivot high above entry (long)
+  / pivot low below entry (short) within `tp2LiquidityLookback` bars. If no
+  valid level exists, **no fake target is invented** — TP2 is skipped and its
+  allocation redistributed to the other targets.
+- **TP3 — fib reference**: `tp3FibRatio` of the impulse (default `0` = swing
+  origin / full-retrace target; set `0.7` for the literal 0.700 line — note that
+  line *is* the entry zone, so it is rarely a useful target).
+
+`targetMode` selects which targets are live (`ALL` | `RR` | `LIQUIDITY` | `FIB`
+| `RR_LIQ` | `RR_FIB` | `LIQ_FIB`). Allocation defaults to **40/30/30**
+(`tp1Percent/tp2Percent/tp3Percent`) and is normalised to 100% across the
+targets that survive validation per trade. Resolution walks forward bar-by-bar:
+the stop is checked **before** targets each bar (tie = worst case), targets fill
+nearest-first, and the trade's R is the allocation-weighted blend.
+
+**Break-even (`useBreakEven`)** — once TP1 fills, the stop moves to entry
+(± `breakEvenBufferPercent`); trades stopped there are booked `breakeven`.
+
+**Take profit — legacy single target (`useMultiTarget: false`)**
 - `tpMode = "RR"` — `entry ± rrRatio × risk`.
 - `tpMode = "SWING"` — the opposite origin swing (the impulse extreme).
 - `tpMode = "FIB_EXT"` — a Fibonacci extension (`1.0`, `1.272`, `1.618`).
 
 **Invalidation** — before a trade triggers, the setup is cancelled if price
 breaks the origin swing (below the swing low for a long, above the swing high for
-a short), or if it never triggers within `zoneExpiryBars`.
+a short), or if it never triggers within `zoneExpiryBars`. A triggered setup is
+also rejected if its stop is wider than `maxRiskPercent` of the entry price
+(0 = off).
+
+**Portfolio limits (applied chronologically across all pairs)**
+- `maxActiveTrades` (default 1) — a new setup is skipped while that many trades
+  are still running.
+- `useMaxTradesPerDay` / `maxTradesPerDay` (default 3).
+- `useMaxDailyLoss` / `maxDailyLossPercent` (default 3%) — measured in R × risk%.
+- `useMaxConsecutiveLosses` / `maxConsecutiveLosses` (default 3) — resets on a
+  win or a new day.
+
+The API response reports `candidates` (all setups that confirmed) and `skipped`
+(how many each limit rejected).
+
+**Session filter (`sessionFilter`, UTC)** — `ALL` | `LONDON` (08–17) |
+`NEWYORK` (13–22) | `LONDON_NY` | `CUSTOM` (`customSessionStart/End`, may wrap
+past midnight). Confirmation outside the session does not trigger a trade.
 
 ## Fibonacci calculation
 
@@ -99,10 +138,15 @@ confirmed swings never move historically.
 
 ## Confirmation engine
 
-`bullish/bearishEngulfing`, `bullish/bearishRejection` (long dominant wick,
-close in the far half), `bullish/bearishPinBar` (small body, one dominant wick),
-`breakOfHigh` / `breakOfLow`. Combine with `_OR_`
-(e.g. `ENGULFING_OR_REJECTION`) or use `ANY`.
+`bullish/bearishStructureBreak` (**the spec's mandatory confirmation**: candle
+closes in the trade direction AND closes beyond the previous candle's
+high/low), `bullish/bearishEngulfing`, `bullish/bearishRejection` (long dominant
+wick, close in the far half), `bullish/bearishPinBar` (small body, one dominant
+wick), `breakOfHigh` / `breakOfLow`. Combine with `_OR_`
+(e.g. `ENGULFING_OR_STRUCTURE`) or use `ANY`. Set
+`confirmationMode: "STRUCTURE"` for the strict spec behaviour;
+`stopLossMode: "CANDLE"` places the stop beyond the confirmation candle itself
+(the spec's §7 default).
 
 ## Risk calculation & position sizing
 
@@ -142,12 +186,26 @@ overridable from the UI config panel or the API body:
   fibUpper: 0.700, fibLower: 0.786,
   pivotLeft: 5, pivotRight: 5,
   minimumImpulsePercent: 1, minimumImpulseATR: 0,
-  confirmationMode: "ENGULFING",          // + REJECTION | PINBAR | BREAK | ANY | *_OR_*
+  confirmationMode: "ENGULFING",          // + STRUCTURE | REJECTION | PINBAR | BREAK | ANY | *_OR_*
   entryMode: "close",                      // close | break
-  stopLossMode: "SWING",                   // SWING | ZONE
+  stopLossMode: "SWING",                   // SWING | ZONE | CANDLE (confirmation candle)
   slBufferPercent: 0.1,
-  tpMode: "RR",                            // RR | SWING | FIB_EXT
+  tpMode: "RR",                            // legacy single-target: RR | SWING | FIB_EXT
   rrRatio: 2, fibExtension: 1.618,
+  // multi-target system (default ON)
+  useMultiTarget: true, targetMode: "ALL", // RR | LIQUIDITY | FIB | RR_LIQ | RR_FIB | LIQ_FIB | ALL
+  tp1RR: 2, tp2LiquidityLookback: 60, tp3FibRatio: 0,
+  tp1Percent: 40, tp2Percent: 30, tp3Percent: 30,
+  useBreakEven: false, breakEvenBufferPercent: 0,
+  maxRiskPercent: 0,                       // 0 = off
+  // portfolio limits
+  maxActiveTrades: 1,
+  useMaxTradesPerDay: false, maxTradesPerDay: 3,
+  useMaxDailyLoss: false, maxDailyLossPercent: 3,
+  useMaxConsecutiveLosses: false, maxConsecutiveLosses: 3,
+  // session (UTC)
+  sessionFilter: "ALL",                    // LONDON | NEWYORK | LONDON_NY | CUSTOM
+  customSessionStart: "00:00", customSessionEnd: "24:00",
   useTrendFilter: false, emaFast: 50, emaSlow: 200,
   useATRFilter: false, atrPeriod: 14, atrMin: 0, atrMax: 0,
   useMarketStructureFilter: false,

@@ -1,0 +1,791 @@
+//@version=6
+// =============================================================================
+// Fibonacci 0.70–0.786 Pullback Strategy
+// -----------------------------------------------------------------------------
+// Sequence (mandatory): IMPULSE -> PULLBACK -> 0.70–0.786 ZONE -> REJECTION ->
+// CONFIRMATION CANDLE -> STRUCTURE BREAK -> ENTRY -> SL -> TP1(RR)/TP2(Liquidity)/TP3(Fib)
+//
+// Design notes:
+//   * No repainting / no look-ahead: swings use ta.pivothigh/low which only
+//     confirm `pivotRight` bars later; the strategy never acts on an unconfirmed
+//     pivot. All confirmation logic reads only the current and prior closed bars.
+//   * Symmetric LONG / SHORT logic.
+//   * Works on any liquid instrument (crypto, FX, indices) — nothing is hardcoded.
+// =============================================================================
+
+strategy(
+     title              = "Fib 0.70–0.786 Pullback Strategy",
+     shorttitle         = "FIB 0.7-0.786",
+     overlay            = true,
+     initial_capital    = 10000,
+     currency           = currency.USD,
+     default_qty_type   = strategy.fixed,
+     default_qty_value  = 1,
+     pyramiding         = 0,
+     process_orders_on_close = true,
+     calc_on_every_tick = false,
+     max_lines_count    = 500,
+     max_labels_count   = 500,
+     max_boxes_count    = 500)
+
+// =============================================================================
+// 1. INPUTS
+// =============================================================================
+// ── Strategy ────────────────────────────────────────────────────────────────
+gStrat      = "━━ Strategy ━━"
+enableLong  = input.bool(true,  "Enable Long",  group = gStrat)
+enableShort = input.bool(true,  "Enable Short", group = gStrat)
+
+// ── Fibonacci ────────────────────────────────────────────────────────────────
+gFib        = "━━ Fibonacci ━━"
+fibZoneStart = input.float(0.700, "Fib Zone Start (0.700)", step = 0.001, group = gFib)
+fibZoneEnd   = input.float(0.786, "Fib Zone End (0.786)",   step = 0.001, group = gFib)
+drawFibLevels = input.bool(true, "Draw all Fib levels", group = gFib)
+showF236 = input.bool(true,  "Show 0.236", inline = "f1", group = gFib)
+showF382 = input.bool(true,  "Show 0.382", inline = "f1", group = gFib)
+showF500 = input.bool(true,  "Show 0.500", inline = "f2", group = gFib)
+showF618 = input.bool(true,  "Show 0.618", inline = "f2", group = gFib)
+
+// ── Swing / Impulse ──────────────────────────────────────────────────────────
+gSwing      = "━━ Swing ━━"
+pivotLeft   = input.int(5, "Pivot Left Bars",  minval = 1, group = gSwing)
+pivotRight  = input.int(5, "Pivot Right Bars", minval = 1, group = gSwing)
+minImpPerc  = input.float(1.0, "Minimum Impulse Size (%)", minval = 0, group = gSwing)
+minImpATR   = input.float(0.0, "Minimum Impulse (ATR mult, 0 = off)", minval = 0, group = gSwing)
+atrLen      = input.int(14, "ATR Length", minval = 1, group = gSwing)
+
+// ── Confirmation ─────────────────────────────────────────────────────────────
+gConf       = "━━ Confirmation ━━"
+confType    = input.string("Close + Break", "Confirmation Type",
+                 options = ["Close + Break", "Close Only", "Break Only"], group = gConf)
+
+// ── Entry ────────────────────────────────────────────────────────────────────
+gEntry      = "━━ Entry ━━"
+entryMode   = input.string("Confirmation Close", "Entry Mode",
+                 options = ["Confirmation Close", "Next Candle Open"], group = gEntry)
+
+// ── Risk / Stop ──────────────────────────────────────────────────────────────
+gRisk       = "━━ Risk ━━"
+accountSize = input.float(10000, "Account Size", minval = 0, group = gRisk)
+riskPercent = input.float(1.0, "Risk Per Trade (%)", minval = 0, group = gRisk)
+slMode      = input.string("Confirmation Candle", "Stop Loss Basis",
+                 options = ["Confirmation Candle", "Swing"], group = gRisk)
+slBufferPerc = input.float(0.05, "SL Buffer (% of price)", minval = 0, group = gRisk)
+maxRiskPerc  = input.float(0.0,  "Max Risk % (0 = off, invalidate if wider)", minval = 0, group = gRisk)
+
+// ── Targets ──────────────────────────────────────────────────────────────────
+gTgt        = "━━ Targets ━━"
+targetMode  = input.string("All Targets", "Target Mode",
+                 options = ["RR Only", "Liquidity Only", "Fib 0.700 Only",
+                            "RR + Liquidity", "RR + Fib", "Liquidity + Fib", "All Targets"],
+                 group = gTgt)
+rrRatio     = input.float(2.0, "TP1 Risk:Reward", minval = 0.1, step = 0.1, group = gTgt)
+liqLookback = input.int(60, "TP2 Liquidity Lookback (bars)", minval = 5, group = gTgt)
+tp3FibRatio = input.float(0.0, "TP3 Fib Ratio (0.0 = swing origin, 0.7 = 0.700 level)",
+                 minval = 0.0, maxval = 1.0, step = 0.05, group = gTgt)
+tp1Perc     = input.float(40, "TP1 Allocation %", minval = 0, maxval = 100, group = gTgt)
+tp2Perc     = input.float(30, "TP2 Allocation %", minval = 0, maxval = 100, group = gTgt)
+tp3Perc     = input.float(30, "TP3 Allocation %", minval = 0, maxval = 100, group = gTgt)
+
+// ── Trade Management ─────────────────────────────────────────────────────────
+gMgmt       = "━━ Trade Management ━━"
+useBreakEven = input.bool(false, "Move SL to Break Even after TP1", group = gMgmt)
+beBufferPerc = input.float(0.0, "Break Even Buffer (% of price)", minval = 0, group = gMgmt)
+zoneExpiry   = input.int(150, "Zone Expiry (bars, setup canceled if no entry)", minval = 5, group = gMgmt)
+
+// ── Daily Limits ─────────────────────────────────────────────────────────────
+gDaily      = "━━ Daily Limits ━━"
+useMaxPerDay = input.bool(false, "Use Max Trades Per Day", group = gDaily)
+maxPerDay    = input.int(3, "Max Trades Per Day", minval = 1, group = gDaily)
+useDailyLoss = input.bool(false, "Use Max Daily Loss %", group = gDaily)
+maxDailyLoss = input.float(3.0, "Max Daily Loss %", minval = 0, group = gDaily)
+useConsecLoss = input.bool(false, "Use Max Consecutive Losses", group = gDaily)
+maxConsecLoss = input.int(3, "Max Consecutive Losses", minval = 1, group = gDaily)
+
+// ── Session ──────────────────────────────────────────────────────────────────
+gSess       = "━━ Session ━━"
+sessionMode = input.string("All Sessions", "Session Filter",
+                 options = ["All Sessions", "London", "New York", "London + New York", "Custom"],
+                 group = gSess)
+customSess  = input.session("0000-2400", "Custom Session", group = gSess)
+sessTZ      = input.string("UTC", "Session Timezone", group = gSess)
+
+// ── Optional Filters ─────────────────────────────────────────────────────────
+gFilt       = "━━ Filters (optional) ━━"
+useTrend    = input.bool(false, "Trend Filter (EMA)", group = gFilt)
+emaFastLen  = input.int(50, "EMA Fast", minval = 1, group = gFilt)
+emaSlowLen  = input.int(200, "EMA Slow", minval = 1, group = gFilt)
+useVol      = input.bool(false, "Volume Filter (above average)", group = gFilt)
+volLen      = input.int(20, "Volume MA Length", minval = 1, group = gFilt)
+
+// ── Alerts / Visuals ─────────────────────────────────────────────────────────
+gAlert      = "━━ Alerts & Visuals ━━"
+enableAlerts = input.bool(true, "Enable Alerts", group = gAlert)
+showZone     = input.bool(true, "Draw Fib Zone", group = gAlert)
+showSwings   = input.bool(true, "Draw Swing High/Low", group = gAlert)
+showLabels   = input.bool(true, "Draw Setup Labels", group = gAlert)
+showStats    = input.bool(true, "Show Statistics Table", group = gAlert)
+showRRTable  = input.bool(true, "Show RR Comparison Table", group = gAlert)
+
+// =============================================================================
+// 2. DERIVED / HELPERS
+// =============================================================================
+atr      = ta.atr(atrLen)
+emaFast  = ta.ema(close, emaFastLen)
+emaSlow  = ta.ema(close, emaSlowLen)
+volMA    = ta.sma(volume, volLen)
+
+// Which targets are enabled by the Target Mode
+tmRR  = targetMode == "RR Only"        or targetMode == "RR + Liquidity" or targetMode == "RR + Fib"  or targetMode == "All Targets"
+tmLiq = targetMode == "Liquidity Only" or targetMode == "RR + Liquidity" or targetMode == "Liquidity + Fib" or targetMode == "All Targets"
+tmFib = targetMode == "Fib 0.700 Only" or targetMode == "RR + Fib"       or targetMode == "Liquidity + Fib" or targetMode == "All Targets"
+
+// Session gate
+inSession() =>
+    bool ok = true
+    if sessionMode == "All Sessions"
+        ok := true
+    else if sessionMode == "Custom"
+        ok := not na(time(timeframe.period, customSess, sessTZ))
+    else
+        lon = not na(time(timeframe.period, "0800-1700", sessTZ))
+        ny  = not na(time(timeframe.period, "1300-2200", sessTZ))
+        ok := sessionMode == "London" ? lon : sessionMode == "New York" ? ny : (lon or ny)
+    ok
+
+// =============================================================================
+// 3. SWING DETECTION (non-repainting pivots)
+// =============================================================================
+ph = ta.pivothigh(pivotLeft, pivotRight)   // price of a confirmed pivot high, else na
+pl = ta.pivotlow(pivotLeft,  pivotRight)   // price of a confirmed pivot low,  else na
+
+var float lastPH    = na
+var int   lastPHbar = na
+var float lastPL    = na
+var int   lastPLbar = na
+
+// Rolling store of confirmed pivots for liquidity targets (TP2)
+var array<float> phStorePr = array.new_float(0)
+var array<int>   phStoreBar = array.new_int(0)
+var array<float> plStorePr = array.new_float(0)
+var array<int>   plStoreBar = array.new_int(0)
+
+// New pivots resolve `pivotRight` bars back
+newPHbar = bar_index - pivotRight
+newPLbar = bar_index - pivotRight
+
+// =============================================================================
+// 4-5. IMPULSE VALIDATION + FIB ZONE  → arm pending setups
+// =============================================================================
+// Long pending setup state
+var bool  lArmed = false
+var float lH = na
+var float lL = na
+var float lRange = na
+var float lZoneTop = na
+var float lZoneBot = na
+var int   lSetupBar = na
+var bool  lEntered = false
+// Short pending setup state
+var bool  sArmed = false
+var float sH = na
+var float sL = na
+var float sRange = na
+var float sZoneTop = na
+var float sZoneBot = na
+var int   sSetupBar = na
+var bool  sEntered = false
+
+impulseOK(rng, ref) =>
+    perc = ref != 0 ? rng / ref * 100 : 0.0
+    rng > 0 and perc >= minImpPerc and (minImpATR <= 0 or rng >= minImpATR * atr)
+
+// ---- Bullish impulse: swing LOW -> swing HIGH (up move) ---------------------
+if not na(ph) and not na(lastPL) and lastPLbar < newPHbar
+    rng = ph - lastPL
+    if enableLong and impulseOK(rng, lastPL)
+        lH        := ph
+        lL        := lastPL
+        lRange    := rng
+        lZoneTop  := ph - fibZoneStart * rng   // 0.700 price (upper edge)
+        lZoneBot  := ph - fibZoneEnd   * rng   // 0.786 price (lower edge)
+        lSetupBar := bar_index
+        lEntered  := false
+        lArmed    := true
+        if enableAlerts
+            alert("Fib 0.70–0.786 LONG setup detected on " + syminfo.ticker, alert.freq_once_per_bar_close)
+
+// ---- Bearish impulse: swing HIGH -> swing LOW (down move) -------------------
+if not na(pl) and not na(lastPH) and lastPHbar < newPLbar
+    rng = lastPH - pl
+    if enableShort and impulseOK(rng, lastPH)
+        sH        := lastPH
+        sL        := pl
+        sRange    := rng
+        sZoneTop  := lastPH - fibZoneStart * rng   // 0.700 price (upper edge)
+        sZoneBot  := lastPH - fibZoneEnd   * rng   // 0.786 price (lower edge)
+        sSetupBar := bar_index
+        sEntered  := false
+        sArmed    := true
+        if enableAlerts
+            alert("Fib 0.70–0.786 SHORT setup detected on " + syminfo.ticker, alert.freq_once_per_bar_close)
+
+// ---- Update pivot trackers + stores (AFTER arming uses the previous values) --
+if not na(ph)
+    lastPH := ph
+    lastPHbar := newPHbar
+    array.push(phStorePr, ph)
+    array.push(phStoreBar, newPHbar)
+    if array.size(phStorePr) > 100
+        array.shift(phStorePr)
+        array.shift(phStoreBar)
+if not na(pl)
+    lastPL := pl
+    lastPLbar := newPLbar
+    array.push(plStorePr, pl)
+    array.push(plStoreBar, newPLbar)
+    if array.size(plStorePr) > 100
+        array.shift(plStorePr)
+        array.shift(plStoreBar)
+
+// =============================================================================
+// 6. CONFIRMATION DETECTION
+// =============================================================================
+bullBody = close > open
+bearBody = close < open
+
+// Long: price pulled DOWN into zone, then bullish structure break up
+if lArmed
+    if low <= lZoneTop
+        lEntered := true
+    // invalidation: broke the origin swing low, or setup expired
+    if close < lL or (bar_index - lSetupBar) > zoneExpiry
+        lArmed := false
+        lEntered := false
+
+// Short: price pulled UP into zone, then bearish structure break down
+if sArmed
+    if high >= sZoneBot
+        sEntered := true
+    if close > sH or (bar_index - sSetupBar) > zoneExpiry
+        sArmed := false
+        sEntered := false
+
+confLong  = lArmed and lEntered and (
+             confType == "Close Only"  ? (bullBody and close > lZoneBot) :
+             confType == "Break Only"  ? (close > high[1]) :
+                                          (bullBody and close > high[1]))
+confShort = sArmed and sEntered and (
+             confType == "Close Only"  ? (bearBody and close < sZoneTop) :
+             confType == "Break Only"  ? (close < low[1]) :
+                                          (bearBody and close < low[1]))
+
+// =============================================================================
+// 7. FILTERS / GATING
+// =============================================================================
+trendLongOK  = not useTrend or emaFast > emaSlow
+trendShortOK = not useTrend or emaFast < emaSlow
+volOK        = not useVol   or volume  > volMA
+sessOK       = inSession()
+
+// Daily-limit bookkeeping
+var int   dayTrades   = 0
+var float dayStartEq  = strategy.initial_capital
+var int   consecLoss  = 0
+var float flatEquity  = strategy.initial_capital
+
+newDay = ta.change(time("D")) != 0
+if newDay
+    dayTrades  := 0
+    dayStartEq := strategy.equity
+
+dailyLossHit = useDailyLoss and dayStartEq > 0 and ((dayStartEq - strategy.equity) / dayStartEq * 100) >= maxDailyLoss
+perDayHit    = useMaxPerDay and dayTrades >= maxPerDay
+consecHit    = useConsecLoss and consecLoss >= maxConsecLoss
+
+flat     = strategy.position_size == 0
+canEnter = flat and sessOK and not dailyLossHit and not perDayHit and not consecHit
+
+// =============================================================================
+// 8-10. STOP, TARGETS, LIQUIDITY  (computed at signal time)
+// =============================================================================
+// Nearest liquidity above (long) / below (short) the reference price, within lookback
+nearestLiqAbove(ref) =>
+    float best = na
+    n = array.size(phStorePr)
+    if n > 0
+        for i = 0 to n - 1
+            pr = array.get(phStorePr, i)
+            br = array.get(phStoreBar, i)
+            if (bar_index - br) <= liqLookback and pr > ref
+                best := na(best) ? pr : math.min(best, pr)
+    best
+
+nearestLiqBelow(ref) =>
+    float best = na
+    n = array.size(plStorePr)
+    if n > 0
+        for i = 0 to n - 1
+            pr = array.get(plStorePr, i)
+            br = array.get(plStoreBar, i)
+            if (bar_index - br) <= liqLookback and pr < ref
+                best := na(best) ? pr : math.max(best, pr)
+    best
+
+// Active trade state
+var bool  inTrade   = false
+var bool  isLongTr  = false
+var float eEntry = na
+var float eSL = na
+var float eTP1 = na
+var float eTP2 = na
+var float eTP3 = na
+var float pA1 = na
+var float pA2 = na
+var float pA3 = na
+var bool  uT1 = false
+var bool  uT2 = false
+var bool  uT3 = false
+var float curStop = na
+var bool  tp1Hit = false
+var bool  tp2Hit = false
+var bool  tp3Hit = false
+var bool  slHit = false
+var int   entryBar = na
+
+// Statistics counters
+var int nTP1 = 0
+var int nTP2 = 0
+var int nTP3 = 0
+var int nSL = 0
+var int nSetups = 0
+
+// Build the normalized target set for a signal
+buildTargets(bool isLong, float entry, float sl, float swingH, float swingL, float rng) =>
+    float risk = math.abs(entry - sl)
+    float tp1 = isLong ? entry + rrRatio * risk : entry - rrRatio * risk
+    float liq = isLong ? nearestLiqAbove(entry) : nearestLiqBelow(entry)
+    float fib = isLong ? swingH - tp3FibRatio * rng : swingL + tp3FibRatio * rng
+    // validity: strictly beyond entry in trade direction
+    bool v1 = tmRR  and (isLong ? tp1 > entry : tp1 < entry)
+    bool v2 = tmLiq and not na(liq) and (isLong ? liq > entry : liq < entry)
+    bool v3 = tmFib and (isLong ? fib > entry : fib < entry)
+    // guarantee at least one exit target (fall back to RR)
+    if not (v1 or v2 or v3)
+        v1 := true
+    // normalize allocations across active targets
+    float b1 = v1 ? tp1Perc : 0.0
+    float b2 = v2 ? tp2Perc : 0.0
+    float b3 = v3 ? tp3Perc : 0.0
+    float tot = b1 + b2 + b3
+    tot := tot <= 0 ? 1.0 : tot
+    [tp1, liq, fib, v1, v2, v3, b1 / tot * 100.0, b2 / tot * 100.0, b3 / tot * 100.0, risk]
+
+// =============================================================================
+// SHADOW RR COMPARISON (independent walk-forward sim, does not affect PnL)
+// =============================================================================
+var array<float> rrList  = array.from(1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0)
+var array<int>   rrTrades = array.new_int(7, 0)
+var array<int>   rrWins   = array.new_int(7, 0)
+var array<int>   rrLoss   = array.new_int(7, 0)
+// open shadow trades
+var array<float> shEntry = array.new_float(0)
+var array<float> shStop  = array.new_float(0)
+var array<float> shRisk  = array.new_float(0)
+var array<int>   shDir   = array.new_int(0)     // 1 long, -1 short
+var array<int>   shMask  = array.new_int(0)     // bitmask of resolved RRs (7 bits)
+
+pushShadow(int dir, float entry, float stop) =>
+    array.push(shEntry, entry)
+    array.push(shStop, stop)
+    array.push(shRisk, math.abs(entry - stop))
+    array.push(shDir, dir)
+    array.push(shMask, 0)
+    for k = 0 to 6
+        array.set(rrTrades, k, array.get(rrTrades, k) + 1)
+
+// resolve open shadow trades against the current bar
+if array.size(shEntry) > 0
+    idx = array.size(shEntry) - 1
+    while idx >= 0
+        dir   = array.get(shDir, idx)
+        entry = array.get(shEntry, idx)
+        stop  = array.get(shStop, idx)
+        risk  = array.get(shRisk, idx)
+        mask  = array.get(shMask, idx)
+        bool stopHit = dir == 1 ? low <= stop : high >= stop
+        for k = 0 to 6
+            bit = int(math.pow(2, k))
+            if (mask % (bit * 2)) < bit    // bit not yet set  (resolved)
+                rr  = array.get(rrList, k)
+                tgt = dir == 1 ? entry + rr * risk : entry - rr * risk
+                bool tgtHit = dir == 1 ? high >= tgt : low <= tgt
+                if stopHit
+                    // stop priority (tie = loss, conservative)
+                    array.set(rrLoss, k, array.get(rrLoss, k) + 1)
+                    mask += bit
+                else if tgtHit
+                    array.set(rrWins, k, array.get(rrWins, k) + 1)
+                    mask += bit
+        array.set(shMask, idx, mask)
+        if mask >= 127            // all 7 resolved
+            array.remove(shEntry, idx)
+            array.remove(shStop, idx)
+            array.remove(shRisk, idx)
+            array.remove(shDir, idx)
+            array.remove(shMask, idx)
+        idx -= 1
+
+// =============================================================================
+// 7/11. ENTRY LOGIC + POSITION MANAGEMENT
+// =============================================================================
+// ---- Raw signals (confirmation + optional filters) --------------------------
+signalLong  = confLong  and enableLong  and trendLongOK  and volOK
+signalShort = confShort and enableShort and trendShortOK and volOK and not signalLong
+
+// ---- Pending entry (used only in "Next Candle Open" mode) -------------------
+var bool  pend     = false
+var bool  pendLong = false
+var float pConfLow = na
+var float pConfHigh = na
+var float pSwH = na
+var float pSwL = na
+var float pRng = na
+
+// Resolve what (if anything) executes on THIS bar.
+bool  execLong  = false
+bool  execShort = false
+float entryRef  = na
+float basisLow  = na
+float basisHigh = na
+float xSwH = na
+float xSwL = na
+float xRng = na
+
+// 1) Execute a pending next-open entry armed on the previous bar (fills at this open).
+if entryMode == "Next Candle Open" and pend
+    entryRef  := open
+    basisLow  := pConfLow
+    basisHigh := pConfHigh
+    xSwH := pSwH
+    xSwL := pSwL
+    xRng := pRng
+    execLong  := pendLong and canEnter
+    execShort := (not pendLong) and canEnter
+    pend := false
+
+// 2) Confirmation-close mode: execute immediately on the confirmation bar's close.
+if entryMode == "Confirmation Close"
+    if signalLong and canEnter
+        execLong := true
+        entryRef := close
+        basisLow := low
+        basisHigh := high
+        xSwH := lH
+        xSwL := lL
+        xRng := lRange
+    else if signalShort and canEnter
+        execShort := true
+        entryRef := close
+        basisLow := low
+        basisHigh := high
+        xSwH := sH
+        xSwL := sL
+        xRng := sRange
+    if signalLong or signalShort
+        lArmed := false
+        sArmed := false
+
+// 3) Next-open mode: capture the confirmation candle now, act next bar.
+if entryMode == "Next Candle Open"
+    if signalLong
+        pend := true
+        pendLong := true
+        pConfLow := low
+        pConfHigh := high
+        pSwH := lH
+        pSwL := lL
+        pRng := lRange
+        lArmed := false
+        sArmed := false
+    else if signalShort
+        pend := true
+        pendLong := false
+        pConfLow := low
+        pConfHigh := high
+        pSwH := sH
+        pSwL := sL
+        pRng := sRange
+        lArmed := false
+        sArmed := false
+
+// ---- LONG execution ---------------------------------------------------------
+if execLong
+    float sl = (slMode == "Swing" ? xSwL : basisLow) * (1 - slBufferPerc / 100.0)
+    float entry = entryRef
+    [tp1, liq, fib, v1, v2, v3, a1, a2, a3, risk] = buildTargets(true, entry, sl, xSwH, xSwL, xRng)
+    bool riskOK = maxRiskPerc <= 0 or (entry > 0 and risk / entry * 100 <= maxRiskPerc)
+    if risk > 0 and riskOK
+        inTrade := true
+        isLongTr := true
+        eEntry := entry
+        eSL := sl
+        curStop := sl
+        eTP1 := tp1
+        eTP2 := liq
+        eTP3 := fib
+        uT1 := v1
+        uT2 := v2
+        uT3 := v3
+        pA1 := a1
+        pA2 := a2
+        pA3 := a3
+        tp1Hit := false
+        tp2Hit := false
+        tp3Hit := false
+        slHit := false
+        entryBar := bar_index
+        nSetups += 1
+        dayTrades += 1
+        float qty = riskPercent > 0 ? (accountSize * riskPercent / 100.0) / risk : na
+        strategy.entry("Long", strategy.long, qty = qty)
+        pushShadow(1, entry, sl)
+        lArmed := false
+        sArmed := false
+        if enableAlerts
+            alert("LONG CONFIRMED | " + syminfo.ticker + " | Entry: " + str.tostring(entry, format.mintick) + " | Fib Zone: 0.70–0.786", alert.freq_once_per_bar_close)
+
+// ---- SHORT execution --------------------------------------------------------
+if execShort
+    float sl = (slMode == "Swing" ? xSwH : basisHigh) * (1 + slBufferPerc / 100.0)
+    float entry = entryRef
+    [tp1, liq, fib, v1, v2, v3, a1, a2, a3, risk] = buildTargets(false, entry, sl, xSwH, xSwL, xRng)
+    bool riskOK = maxRiskPerc <= 0 or (entry > 0 and risk / entry * 100 <= maxRiskPerc)
+    if risk > 0 and riskOK
+        inTrade := true
+        isLongTr := false
+        eEntry := entry
+        eSL := sl
+        curStop := sl
+        eTP1 := tp1
+        eTP2 := liq
+        eTP3 := fib
+        uT1 := v1
+        uT2 := v2
+        uT3 := v3
+        pA1 := a1
+        pA2 := a2
+        pA3 := a3
+        tp1Hit := false
+        tp2Hit := false
+        tp3Hit := false
+        slHit := false
+        entryBar := bar_index
+        nSetups += 1
+        dayTrades += 1
+        float qty = riskPercent > 0 ? (accountSize * riskPercent / 100.0) / risk : na
+        strategy.entry("Short", strategy.short, qty = qty)
+        pushShadow(-1, entry, sl)
+        lArmed := false
+        sArmed := false
+        if enableAlerts
+            alert("SHORT CONFIRMED | " + syminfo.ticker + " | Entry: " + str.tostring(entry, format.mintick) + " | Fib Zone: 0.70–0.786", alert.freq_once_per_bar_close)
+
+// ---- While in a trade: break-even, hit tracking, and exit orders ------------
+if inTrade and strategy.position_size != 0
+    // Break-even after TP1
+    if useBreakEven and tp1Hit
+        curStop := isLongTr ? eEntry * (1 + beBufferPerc / 100.0) : eEntry * (1 - beBufferPerc / 100.0)
+
+    // Hit tracking for stats + alerts (stop checked first = worst case on ties)
+    bool stopTouch = isLongTr ? low <= curStop : high >= curStop
+    if stopTouch and not slHit
+        slHit := true
+        nSL += 1
+        if enableAlerts
+            alert("STOP LOSS HIT | " + syminfo.ticker, alert.freq_once_per_bar_close)
+    if not stopTouch
+        if uT1 and not tp1Hit and (isLongTr ? high >= eTP1 : low <= eTP1)
+            tp1Hit := true
+            nTP1 += 1
+            if enableAlerts
+                alert("TP1 reached | " + syminfo.ticker, alert.freq_once_per_bar_close)
+        if uT2 and not tp2Hit and not na(eTP2) and (isLongTr ? high >= eTP2 : low <= eTP2)
+            tp2Hit := true
+            nTP2 += 1
+            if enableAlerts
+                alert("TP2 (Liquidity) reached | " + syminfo.ticker, alert.freq_once_per_bar_close)
+        if uT3 and not tp3Hit and (isLongTr ? high >= eTP3 : low <= eTP3)
+            tp3Hit := true
+            nTP3 += 1
+            if enableAlerts
+                alert("TP3 (Fib) reached | " + syminfo.ticker, alert.freq_once_per_bar_close)
+
+    // Submit / refresh exit orders (partial TPs share the current stop)
+    if isLongTr
+        if uT1
+            strategy.exit("X1", "Long", qty_percent = pA1, limit = eTP1, stop = curStop, comment = "TP1")
+        if uT2 and not na(eTP2)
+            strategy.exit("X2", "Long", qty_percent = pA2, limit = eTP2, stop = curStop, comment = "TP2")
+        if uT3
+            strategy.exit("X3", "Long", qty_percent = pA3, limit = eTP3, stop = curStop, comment = "TP3")
+    else
+        if uT1
+            strategy.exit("X1", "Short", qty_percent = pA1, limit = eTP1, stop = curStop, comment = "TP1")
+        if uT2 and not na(eTP2)
+            strategy.exit("X2", "Short", qty_percent = pA2, limit = eTP2, stop = curStop, comment = "TP2")
+        if uT3
+            strategy.exit("X3", "Short", qty_percent = pA3, limit = eTP3, stop = curStop, comment = "TP3")
+
+// ---- Detect flat transition: update consecutive-loss + reset trade state ----
+// (guard bar_index > entryBar: the entry fills at THIS bar's close, so
+//  position_size is still 0 during evaluation of the entry bar itself)
+if inTrade and strategy.position_size == 0 and bar_index > entryBar
+    float tradePnL = strategy.equity - flatEquity
+    consecLoss := tradePnL < 0 ? consecLoss + 1 : 0
+    flatEquity := strategy.equity
+    inTrade := false
+if strategy.position_size == 0 and not inTrade
+    flatEquity := strategy.equity
+
+// =============================================================================
+// 14. VISUALISATION
+// =============================================================================
+var box   zBox   = na
+var line  shLine = na
+var line  slLine = na
+var line  enLine = na
+var line  t1Line = na
+var line  t2Line = na
+var line  t3Line = na
+var label sLabel = na
+var array<line> fibLines = array.new_line(0)
+
+// Inlined (not a function) so we can reassign the persistent drawing handles.
+if execLong or execShort
+    bool isLong = execLong
+    // clear previous trade's drawings
+    if not na(zBox)
+        box.delete(zBox)
+    if not na(shLine)
+        line.delete(shLine)
+    if not na(slLine)
+        line.delete(slLine)
+    if not na(enLine)
+        line.delete(enLine)
+    if not na(t1Line)
+        line.delete(t1Line)
+    if not na(t2Line)
+        line.delete(t2Line)
+    if not na(t3Line)
+        line.delete(t3Line)
+    if not na(sLabel)
+        label.delete(sLabel)
+    if array.size(fibLines) > 0
+        for i = 0 to array.size(fibLines) - 1
+            line.delete(array.get(fibLines, i))
+        array.clear(fibLines)
+
+    float zt  = isLong ? lZoneTop : sZoneTop
+    float zb  = isLong ? lZoneBot : sZoneBot
+    float sh  = isLong ? lH : sH
+    float rng = isLong ? lRange : sRange
+    int   x1  = isLong ? lSetupBar : sSetupBar
+    int   x2  = bar_index + 25
+
+    if showZone
+        zBox := box.new(x1, zt, x2, zb, border_color = color.new(color.orange, 40), bgcolor = color.new(color.orange, 85))
+    if showSwings
+        shLine := line.new(x1, sh, x2, sh, color = color.gray, style = line.style_dotted)
+    enLine := line.new(entryBar, eEntry, x2, eEntry, color = color.blue, width = 2)
+    slLine := line.new(entryBar, curStop, x2, curStop, color = color.red, width = 2)
+    if uT1
+        t1Line := line.new(entryBar, eTP1, x2, eTP1, color = color.green, style = line.style_dashed)
+    if uT2 and not na(eTP2)
+        t2Line := line.new(entryBar, eTP2, x2, eTP2, color = color.teal, style = line.style_dashed)
+    if uT3
+        t3Line := line.new(entryBar, eTP3, x2, eTP3, color = color.purple, style = line.style_dashed)
+
+    if drawFibLevels
+        levs = array.from(0.236, 0.382, 0.500, 0.618)
+        ens  = array.from(showF236, showF382, showF500, showF618)
+        for i = 0 to array.size(levs) - 1
+            if array.get(ens, i)
+                r   = array.get(levs, i)
+                lvl = sh - r * rng
+                ln  = line.new(x1, lvl, x2, lvl, color = color.new(color.silver, 50), style = line.style_dotted)
+                array.push(fibLines, ln)
+
+    if showLabels
+        float rsk = math.abs(eEntry - eSL)
+        txt = (isLong ? "LONG SETUP" : "SHORT SETUP") + "\nFib Zone: 0.70–0.786" + "\nEntry: " + str.tostring(eEntry, format.mintick) + "\nSL: " + str.tostring(eSL, format.mintick) + "\nRisk: " + str.tostring(rsk, format.mintick) + "\nTP1: " + (uT1 ? str.tostring(eTP1, format.mintick) + " (" + str.tostring(rrRatio) + "R)" : "—") + "\nTP2: " + (uT2 and not na(eTP2) ? str.tostring(eTP2, format.mintick) + " (Liq)" : "—") + "\nTP3: " + (uT3 ? str.tostring(eTP3, format.mintick) + " (Fib)" : "—")
+        sLabel := label.new(entryBar, eEntry, txt, style = isLong ? label.style_label_up : label.style_label_down, color = isLong ? color.new(color.green, 20) : color.new(color.red, 20), textcolor = color.white, size = size.small)
+
+// =============================================================================
+// 15. STATISTICS TABLES
+// =============================================================================
+f_pct(a, b) => b > 0 ? str.tostring(a / b * 100, "#.0") + "%" : "—"
+
+if showStats and barstate.islast
+    var table st = table.new(position.top_right, 2, 14, border_width = 1)
+    tot   = strategy.closedtrades
+    wins  = strategy.wintrades
+    losse = strategy.losstrades
+    pf    = strategy.grossloss > 0 ? strategy.grossprofit / strategy.grossloss : na
+    avgW  = wins  > 0 ? strategy.grossprofit / wins  : 0
+    avgL  = losse > 0 ? strategy.grossloss  / losse : 0
+    table.cell(st, 0, 0, "FIB 0.70–0.786 STATS", text_color = color.white, bgcolor = color.new(color.blue, 0), text_size = size.small)
+    table.cell(st, 1, 0, "", bgcolor = color.new(color.blue, 0))
+    table.cell(st, 0, 1, "Trades taken", text_size = size.tiny)
+    table.cell(st, 1, 1, str.tostring(nSetups), text_size = size.tiny)
+    table.cell(st, 0, 2, "Closed trades", text_size = size.tiny)
+    table.cell(st, 1, 2, str.tostring(tot), text_size = size.tiny)
+    table.cell(st, 0, 3, "Win rate", text_size = size.tiny)
+    table.cell(st, 1, 3, f_pct(wins, tot), text_size = size.tiny)
+    table.cell(st, 0, 4, "Net profit", text_size = size.tiny)
+    table.cell(st, 1, 4, str.tostring(strategy.netprofit, "#.##"), text_size = size.tiny)
+    table.cell(st, 0, 5, "Profit factor", text_size = size.tiny)
+    table.cell(st, 1, 5, na(pf) ? "—" : str.tostring(pf, "#.##"), text_size = size.tiny)
+    table.cell(st, 0, 6, "Avg win", text_size = size.tiny)
+    table.cell(st, 1, 6, str.tostring(avgW, "#.##"), text_size = size.tiny)
+    table.cell(st, 0, 7, "Avg loss", text_size = size.tiny)
+    table.cell(st, 1, 7, str.tostring(avgL, "#.##"), text_size = size.tiny)
+    table.cell(st, 0, 8, "Max drawdown", text_size = size.tiny)
+    table.cell(st, 1, 8, str.tostring(strategy.max_drawdown, "#.##"), text_size = size.tiny)
+    table.cell(st, 0, 9, "TP1 hit rate", text_size = size.tiny)
+    table.cell(st, 1, 9, f_pct(nTP1, nSetups), text_size = size.tiny)
+    table.cell(st, 0, 10, "TP2 hit rate", text_size = size.tiny)
+    table.cell(st, 1, 10, f_pct(nTP2, nSetups), text_size = size.tiny)
+    table.cell(st, 0, 11, "TP3 hit rate", text_size = size.tiny)
+    table.cell(st, 1, 11, f_pct(nTP3, nSetups), text_size = size.tiny)
+    table.cell(st, 0, 12, "SL hit rate", text_size = size.tiny)
+    table.cell(st, 1, 12, f_pct(nSL, nSetups), text_size = size.tiny)
+    table.cell(st, 0, 13, "Risk/trade", text_size = size.tiny)
+    table.cell(st, 1, 13, str.tostring(riskPercent, "#.#") + "%", text_size = size.tiny)
+
+if showRRTable and barstate.islast
+    var table rt = table.new(position.bottom_right, 4, 8, border_width = 1)
+    table.cell(rt, 0, 0, "RR",       text_color = color.white, bgcolor = color.new(color.purple, 0), text_size = size.tiny)
+    table.cell(rt, 1, 0, "Trades",   text_color = color.white, bgcolor = color.new(color.purple, 0), text_size = size.tiny)
+    table.cell(rt, 2, 0, "Win Rate", text_color = color.white, bgcolor = color.new(color.purple, 0), text_size = size.tiny)
+    table.cell(rt, 3, 0, "Expectancy(R)", text_color = color.white, bgcolor = color.new(color.purple, 0), text_size = size.tiny)
+    for k = 0 to 6
+        rr = array.get(rrList, k)
+        tr = array.get(rrTrades, k)
+        w  = array.get(rrWins, k)
+        l  = array.get(rrLoss, k)
+        resolved = w + l
+        wr = resolved > 0 ? w / resolved * 100 : 0
+        // expectancy in R: win pays rr, loss pays -1
+        expc = resolved > 0 ? (w * rr - l * 1.0) / resolved : 0
+        table.cell(rt, 0, k + 1, "1:" + str.tostring(rr), text_size = size.tiny)
+        table.cell(rt, 1, k + 1, str.tostring(tr), text_size = size.tiny)
+        table.cell(rt, 2, k + 1, resolved > 0 ? str.tostring(wr, "#.0") + "%" : "—", text_size = size.tiny)
+        table.cell(rt, 3, k + 1, resolved > 0 ? str.tostring(expc, "#.00") : "—",
+             text_color = expc > 0 ? color.green : color.red, text_size = size.tiny)
+
+// =============================================================================
+// 17. ALERT CONDITIONS (for TradingView's "Create Alert" dialog)
+// =============================================================================
+alertcondition(execLong,  title = "LONG CONFIRMED",  message = "LONG CONFIRMED {{ticker}} @ {{close}} | Fib 0.70–0.786")
+alertcondition(execShort, title = "SHORT CONFIRMED", message = "SHORT CONFIRMED {{ticker}} @ {{close}} | Fib 0.70–0.786")

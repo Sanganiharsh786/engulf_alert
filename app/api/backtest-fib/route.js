@@ -13,10 +13,21 @@ const NUM_KEYS = [
   "minimumImpulseATR", "rrRatio", "fibExtension", "slBufferPercent",
   "emaFast", "emaSlow", "atrPeriod", "atrMin", "atrMax",
   "riskPercent", "initialCapital", "zoneExpiryBars",
+  // multi-target system
+  "tp1RR", "tp2LiquidityLookback", "tp3FibRatio",
+  "tp1Percent", "tp2Percent", "tp3Percent",
+  "breakEvenBufferPercent", "maxRiskPercent",
+  // trade limits
+  "maxActiveTrades", "maxTradesPerDay", "maxDailyLossPercent", "maxConsecutiveLosses",
 ];
-const STR_KEYS = ["confirmationMode", "entryMode", "stopLossMode", "tpMode"];
+const STR_KEYS = [
+  "confirmationMode", "entryMode", "stopLossMode", "tpMode",
+  "targetMode", "sessionFilter", "customSessionStart", "customSessionEnd",
+];
 const BOOL_KEYS = [
   "useTrendFilter", "useATRFilter", "useMarketStructureFilter", "allowLong", "allowShort",
+  "useMultiTarget", "useBreakEven",
+  "useMaxTradesPerDay", "useMaxDailyLoss", "useMaxConsecutiveLosses",
 ];
 
 export async function POST(req) {

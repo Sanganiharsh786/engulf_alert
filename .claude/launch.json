@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "fibtest",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["lib/fibStrategy.test.mjs"],
+      "port": 3999
     }
   ]
 }
