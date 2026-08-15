@@ -173,8 +173,35 @@ wick), `breakOfHigh` / `breakOfLow`. Combine with `_OR_`
 
 Total / winning / losing / open trades, win rate, profit factor, net profit
 ($ and %), net R, average R, expectancy, average win/loss (R), largest win/loss,
-max drawdown ($ and %), max consecutive wins/losses, and a separate
-**LONG vs SHORT** breakdown.
+max drawdown ($ and %), max consecutive wins/losses, **TP1/TP2/TP3/SL hit
+rates**, and a separate **LONG vs SHORT** breakdown.
+
+### Month-wise breakdown (`stats.monthly`)
+
+Every backtest also returns a per-calendar-month table, rendered as **Monthly
+Performance** on the page. One row per month with: trades closed (plus any still
+open), W/L/break-even counts, win rate, net R, net profit, **return %**, profit
+factor, max drawdown, TP1/TP2/TP3/SL hit rates, and the equity the month closed
+at. A totals row reconciles against the headline stats.
+
+Two things worth knowing when reading it:
+
+- **Months are bucketed on the IST clock** (UTC+5:30), the same clock as the
+  `time` column in the trades table — so a trade at 20:00 UTC on 29 Feb lands in
+  **March**.
+- **Equity compounds across months.** Each month's `returnPct` is measured
+  against the equity that month *opened* with, not against the initial capital,
+  so the monthly percentages do not sum to the total return. `maxDrawdown` is
+  measured *within* the month (the peak resets at each month boundary), so
+  summing monthly drawdowns will not give the overall figure either.
+- Win rate here counts **decided** trades only (break-evens excluded from the
+  denominator).
+
+Alongside the table: `monthsProfitable`, `monthsLosing`, `avgMonthlyReturnPct`,
+`bestMonth`, and `worstMonth`.
+
+To get a meaningful month-wise view, run with enough history — e.g. `days: 365`
+on the `4h` or `1d` timeframe, or use an explicit `from`/`to` range.
 
 ## Configuration
 

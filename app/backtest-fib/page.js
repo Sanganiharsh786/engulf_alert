@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   BarChart3,
+  CalendarDays,
   GitCompare,
   RefreshCw,
   Sigma,
@@ -144,7 +145,8 @@ export default function FibBacktestPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [days, setDays] = useState(60);
+  // a year by default, so the monthly breakdown has enough months to be useful
+  const [days, setDays] = useState(365);
   const [timeframe, setTimeframe] = useState("1h");
   const [cfg, setCfg] = useState(DEFAULTS);
   const [selectedTrade, setSelectedTrade] = useState(null);
@@ -415,6 +417,87 @@ export default function FibBacktestPage() {
             <DirCard title="LONG performance" icon={<TrendingUp className="size-4 text-bull" />} s={stats.long} />
             <DirCard title="SHORT performance" icon={<TrendingDown className="size-4 text-bear" />} s={stats.short} />
           </div>
+
+          {/* Month-wise performance */}
+          {stats.monthly && stats.monthly.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
+                  <CalendarDays className="size-4" /> Monthly Performance
+                  <span className="text-[10px] font-normal text-muted-foreground">
+                    ({stats.monthsProfitable}/{stats.monthly.length} months profitable · avg{" "}
+                    {pct(stats.avgMonthlyReturnPct)} / month · equity compounds, so each month&apos;s
+                    return is measured against its opening equity)
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="overflow-x-auto p-0">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border text-left text-muted-foreground">
+                      {["Month", "Trades", "W / L", "Win Rate", "Net R", "Net Profit", "Return %", "Profit Factor", "Max DD", "TP1", "TP2", "TP3", "SL", "End Equity"].map((h) => (
+                        <th key={h} className="whitespace-nowrap px-3 py-2 font-medium">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="font-mono tnum">
+                    {stats.monthly.map((m) => (
+                      <tr key={m.month} className="border-b border-border/60">
+                        <td className="whitespace-nowrap px-3 py-2 font-semibold">{m.label}</td>
+                        <td className="px-3 py-2">
+                          {m.closed}
+                          {m.open > 0 && <span className="ml-1 text-muted-foreground">(+{m.open} open)</span>}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2">
+                          <span className="text-bull">{m.wins}</span> / <span className="text-bear">{m.losses}</span>
+                          {m.breakevens > 0 && <span className="text-muted-foreground"> / {m.breakevens}be</span>}
+                        </td>
+                        <td className={cn("px-3 py-2", m.winRate >= 50 ? "text-bull" : "text-bear")}>{pct(m.winRate)}</td>
+                        <td className={cn("px-3 py-2", m.netR > 0 ? "text-bull" : m.netR < 0 ? "text-bear" : "")}>
+                          {m.netR > 0 ? "+" : ""}{m.netR}R
+                        </td>
+                        <td className={cn("px-3 py-2", m.netProfit > 0 ? "text-bull" : m.netProfit < 0 ? "text-bear" : "")}>{money(m.netProfit)}</td>
+                        <td className={cn("px-3 py-2", m.returnPct > 0 ? "text-bull" : m.returnPct < 0 ? "text-bear" : "")}>
+                          {m.returnPct > 0 ? "+" : ""}{m.returnPct}%
+                        </td>
+                        <td className={cn("px-3 py-2", m.profitFactor >= 1 ? "text-bull" : "text-bear")}>{m.profitFactor}</td>
+                        <td className="px-3 py-2 text-bear">{money(m.maxDrawdown)}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{pct(m.tp1HitRate)}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{pct(m.tp2HitRate)}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{pct(m.tp3HitRate)}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{pct(m.slHitRate)}</td>
+                        <td className="px-3 py-2">{money(m.endEquity)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-border font-semibold">
+                      <td className="px-3 py-2">Total</td>
+                      <td className="px-3 py-2">{stats.closedTrades}</td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        <span className="text-bull">{stats.wins}</span> / <span className="text-bear">{stats.losses}</span>
+                      </td>
+                      <td className={cn("px-3 py-2", stats.winRate >= 50 ? "text-bull" : "text-bear")}>{pct(stats.winRate)}</td>
+                      <td className={cn("px-3 py-2", stats.netR > 0 ? "text-bull" : "text-bear")}>
+                        {stats.netR > 0 ? "+" : ""}{stats.netR}R
+                      </td>
+                      <td className={cn("px-3 py-2", stats.netProfit > 0 ? "text-bull" : "text-bear")}>{money(stats.netProfit)}</td>
+                      <td className={cn("px-3 py-2", stats.netProfitPct > 0 ? "text-bull" : "text-bear")}>
+                        {stats.netProfitPct > 0 ? "+" : ""}{stats.netProfitPct}%
+                      </td>
+                      <td className={cn("px-3 py-2", stats.profitFactor >= 1 ? "text-bull" : "text-bear")}>{stats.profitFactor}</td>
+                      <td className="px-3 py-2 text-bear">{money(stats.maxDrawdown)}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{pct(stats.tp1HitRate)}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{pct(stats.tp2HitRate)}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{pct(stats.tp3HitRate)}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{pct(stats.slHitRate)}</td>
+                      <td className="px-3 py-2">{money(stats.finalEquity)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </CardContent>
+            </Card>
+          )}
 
           {/* RR comparison */}
           {data.rrComparison && data.rrComparison.length > 0 && (
