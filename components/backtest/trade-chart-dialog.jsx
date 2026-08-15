@@ -71,6 +71,8 @@ export function TradeChartDialog({ trade, onClose }) {
             direction: trade.direction,
             levelLow,
             levelHigh,
+            // lets the API guarantee the exit bar is inside the returned window
+            exitTs: trade.exitTs ?? null,
           }),
         });
         if (response.status === 401) {
@@ -91,7 +93,7 @@ export function TradeChartDialog({ trade, onClose }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trade?.ts, trade?.pair]);
+  }, [trade?.ts, trade?.pair, trade?.exitTs]);
 
   if (!trade) return null;
 
@@ -109,7 +111,8 @@ export function TradeChartDialog({ trade, onClose }) {
                   : "border-bear/40 bg-bear/10 text-bear"
               }
             >
-              {trade.direction?.toUpperCase()} {trade.strategy === "crt" ? "CRT" : "ENGULFING"}
+              {trade.direction?.toUpperCase()}{" "}
+              {trade.strategy === "crt" ? "CRT" : trade.strategy === "fib" ? "FIB" : "ENGULFING"}
             </Badge>
             <Badge
               variant="outline"
@@ -176,6 +179,44 @@ export function TradeChartDialog({ trade, onClose }) {
             />
             <DetailStat label="Bars held" value={trade.barsHeld || "—"} />
           </div>
+
+          {/* Multi-target breakdown — only present on fib trades */}
+          {(trade.tp1 != null || trade.tp2 != null || trade.tp3 != null) && (
+            <div className="mt-2 grid grid-cols-3 gap-2 sm:gap-3">
+              {[
+                { key: "tp1", label: "TP1 · RR", price: trade.tp1, hit: trade.tp1Hit },
+                { key: "tp2", label: "TP2 · Liquidity", price: trade.tp2, hit: trade.tp2Hit },
+                { key: "tp3", label: "TP3 · Fib", price: trade.tp3, hit: trade.tp3Hit },
+              ].map((t) => (
+                <div
+                  key={t.key}
+                  className={`rounded-md border px-2 py-2 text-center ${
+                    t.price == null
+                      ? "border-border bg-popover opacity-50"
+                      : t.hit
+                      ? "border-bull/40 bg-bull/10"
+                      : "border-border bg-popover"
+                  }`}
+                >
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{t.label}</div>
+                  <div className={`mt-0.5 text-sm font-bold ${t.hit ? "text-bull" : ""}`}>
+                    {t.price == null ? "—" : fmt(t.price)}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {t.price == null ? "not used" : t.hit ? "hit" : "missed"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {trade.exitTime && (
+            <p className="mt-2 text-center text-[11px] text-muted-foreground">
+              Exited {trade.exitTime} IST
+              {trade.slHit ? " · stopped out" : ""}
+              {trade.movedToBE ? " · stop moved to break-even after TP1" : ""}
+            </p>
+          )}
 
           {tvSymbol && (
             <div className="mt-4 flex justify-center">

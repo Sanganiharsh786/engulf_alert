@@ -12,8 +12,8 @@ export async function POST(req) {
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   
   try {
-    const { pairName, timestamp, entry, stop, tp, direction, levelLow, levelHigh } = await req.json();
-    
+    const { pairName, timestamp, entry, stop, tp, direction, levelLow, levelHigh, exitTs } = await req.json();
+
     if (!pairName || !timestamp) {
       return NextResponse.json({ error: "missing required fields" }, { status: 400 });
     }
@@ -25,35 +25,60 @@ export async function POST(req) {
       return NextResponse.json({ error: "pair not found" }, { status: 404 });
     }
 
-    // Fetch chart data around the trade's timestamp (historical data)
-    // Show 20 candles before and 30 after the engulfing pattern
+    // Chart window: 20 candles of lead-in, then enough candles AFTER the signal
+    // to always include the bar the trade closed on plus a little breathing room.
+    // A fixed forward window silently cut off any trade that took longer than it
+    // to reach TP/SL, which made the risk/reward boxes look wrong.
     const tf = pair.timeframe || store.settings.timeframe || "15m";
     const tfMs = tfSeconds(tf) * 1000;
     const signalTs = Number(timestamp);
-    
-    // Calculate time window around the signal
-    const startMs = signalTs - (25 * tfMs);
-    const endMs = signalTs + (35 * tfMs);
-    
+
+    const LEAD_BARS = 20;
+    const MIN_FORWARD_BARS = 30; // still-open trades, or when no exit is known
+    const TRAIL_BARS = 8; // candles shown after the exit, for context
+    const MAX_FORWARD_BARS = 400; // guard against a runaway fetch
+
+    const exit = Number(exitTs);
+    const barsToExit =
+      Number.isFinite(exit) && exit > signalTs ? Math.ceil((exit - signalTs) / tfMs) : 0;
+    const forwardBars = Math.min(
+      MAX_FORWARD_BARS,
+      Math.max(MIN_FORWARD_BARS, barsToExit + TRAIL_BARS)
+    );
+
+    // fetch a little wider than we render, so slicing has room on both sides
+    const startMs = signalTs - (LEAD_BARS + 5) * tfMs;
+    const endMs = signalTs + (forwardBars + 5) * tfMs;
+
     let chartData;
     try {
       // Fetch historical candles around the signal time
       chartData = await fetchOHLCVRange(pair, tf, startMs, endMs);
     } catch (e) {
       console.warn("Historical fetch failed, falling back to recent candles:", e.message);
-      chartData = await fetchOHLCV(pair, tf, 60);
+      chartData = await fetchOHLCV(pair, tf, LEAD_BARS + forwardBars);
     }
-    
+
     // Find the signal candle
     const signalIndex = chartData.findIndex(candle => candle[0] === signalTs);
     let windowStart = 0;
     let windowEnd = chartData.length;
-    
+
     if (signalIndex !== -1) {
-      windowStart = Math.max(0, signalIndex - 20);
-      windowEnd = Math.min(chartData.length, signalIndex + 30);
+      windowStart = Math.max(0, signalIndex - LEAD_BARS);
+      windowEnd = Math.min(chartData.length, signalIndex + forwardBars + 1);
+      // never clip the exit bar out of the window
+      if (Number.isFinite(exit)) {
+        const exitIndex = chartData.findIndex((c) => c[0] >= exit);
+        if (exitIndex !== -1) {
+          windowEnd = Math.min(
+            chartData.length,
+            Math.max(windowEnd, exitIndex + TRAIL_BARS + 1)
+          );
+        }
+      }
     }
-    
+
     const windowData = chartData.slice(windowStart, windowEnd);
 
     // Generate the SVG chart with trade details
@@ -77,6 +102,7 @@ export async function POST(req) {
       rows: windowData,
       tf,
       signalTs,
+      exitTs: Number.isFinite(exit) ? exit : null,
       pairName: pair.name,
     });
   } catch (e) {

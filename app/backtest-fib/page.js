@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   BarChart3,
   CalendarDays,
+  Clock,
   GitCompare,
   RefreshCw,
   Sigma,
@@ -19,6 +20,10 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/backtest/spinner";
 import { TradesTable } from "@/components/backtest/trades-table";
+import { SESSIONS } from "@/lib/sessions";
+import { TradesCalendar } from "@/components/backtest/calendars";
+import { SessionBreakdown } from "@/components/backtest/session-breakdown";
+import { summarizeByDay, summarizeBySession, monthLabel, sessionOf } from "@/components/backtest/utils";
 import { TradeChartDialog } from "@/components/backtest/trade-chart-dialog";
 import { cn } from "@/lib/utils";
 import { useToast } from "../toast";
@@ -150,6 +155,9 @@ export default function FibBacktestPage() {
   const [timeframe, setTimeframe] = useState("1h");
   const [cfg, setCfg] = useState(DEFAULTS);
   const [selectedTrade, setSelectedTrade] = useState(null);
+  const [monthSel, setMonthSel] = useState(null); // "YYYY-MM"
+  const [daySel, setDaySel] = useState(null); // "YYYY-MM-DD"
+  const [sessionSel, setSessionSel] = useState([]); // session keys, view-only filter
   const toast = useToast();
 
   const set = (k) => (v) => setCfg((c) => ({ ...c, [k]: v }));
@@ -196,7 +204,36 @@ export default function FibBacktestPage() {
   }, []);
 
   const stats = data?.stats;
-  const tradeList = useMemo(() => (data?.trades ? data.trades : []), [data]);
+  const allTrades = useMemo(() => (data?.trades ? data.trades : []), [data]);
+
+  // Month -> day drilldown. Clicking a month row scopes everything below it to
+  // that month; clicking a day in the calendar narrows it further.
+  const monthTrades = useMemo(
+    () => (monthSel ? allTrades.filter((t) => t.time.slice(0, 7) === monthSel) : allTrades),
+    [allTrades, monthSel]
+  );
+  const dayRows = useMemo(
+    () => (monthSel ? summarizeByDay(monthTrades) : []),
+    [monthTrades, monthSel]
+  );
+  const dayScoped = useMemo(
+    () => (daySel ? monthTrades.filter((t) => t.time.slice(0, 10) === daySel) : monthTrades),
+    [monthTrades, daySel]
+  );
+  // Session cards summarise the current month/day scope, and clicking one
+  // narrows the table further — this is a VIEW filter over results already
+  // returned, unlike the strategy-level `sessionFilter` which changes the run.
+  const sessionRows = useMemo(() => summarizeBySession(dayScoped), [dayScoped]);
+  const tradeList = useMemo(
+    () => (sessionSel.length ? dayScoped.filter((t) => sessionSel.includes(sessionOf(t.time))) : dayScoped),
+    [dayScoped, sessionSel]
+  );
+  // day-level session/setup rollup for the selected day
+
+  // clear a stale day selection when the month changes
+  useEffect(() => {
+    if (daySel && daySel.slice(0, 7) !== monthSel) setDaySel(null);
+  }, [monthSel, daySel]);
   const showRrExtras = cfg.tpMode === "RR";
 
   return (
@@ -330,24 +367,29 @@ export default function FibBacktestPage() {
               w="w-40"
               options={[
                 { value: "ALL", label: "All sessions" },
-                { value: "LONDON", label: "London" },
-                { value: "NEWYORK", label: "New York" },
-                { value: "LONDON_NY", label: "London + NY" },
+                ...SESSIONS.map((s) => ({ value: s.key.toUpperCase(), label: `${s.label} (${s.window})` })),
+                { value: "SYDNEY_TOKYO", label: "Sydney + Tokyo" },
+                { value: "TOKYO_LONDON", label: "Tokyo + London" },
+                { value: "LONDON_NY", label: "London + New York" },
                 { value: "CUSTOM", label: "Custom" },
               ]}
             />
             {cfg.sessionFilter === "CUSTOM" && (
               <>
                 <div className="flex flex-col gap-1">
-                  <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">From (UTC)</Label>
+                  <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">From (IST)</Label>
                   <Input value={cfg.customSessionStart} onChange={(e) => set("customSessionStart")(e.target.value)} className="h-8 w-20 font-mono text-xs" />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">To (UTC)</Label>
+                  <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">To (IST)</Label>
                   <Input value={cfg.customSessionEnd} onChange={(e) => set("customSessionEnd")(e.target.value)} className="h-8 w-20 font-mono text-xs" />
                 </div>
               </>
             )}
+            <span className="w-full text-[10px] text-muted-foreground">
+              Session windows are IST, matching the Time column. The filter applies at
+              entry time — press <strong>Run Backtest</strong> to re-run after changing it.
+            </span>
           </div>
 
           <div className="flex flex-wrap items-end gap-3">
@@ -429,6 +471,9 @@ export default function FibBacktestPage() {
                     {pct(stats.avgMonthlyReturnPct)} / month · equity compounds, so each month&apos;s
                     return is measured against its opening equity)
                   </span>
+                  <span className="ml-auto text-[10px] font-normal text-muted-foreground">
+                    Click a month to see its days
+                  </span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="overflow-x-auto p-0">
@@ -442,8 +487,18 @@ export default function FibBacktestPage() {
                   </thead>
                   <tbody className="font-mono tnum">
                     {stats.monthly.map((m) => (
-                      <tr key={m.month} className="border-b border-border/60">
-                        <td className="whitespace-nowrap px-3 py-2 font-semibold">{m.label}</td>
+                      <tr
+                        key={m.month}
+                        onClick={() => setMonthSel(monthSel === m.month ? null : m.month)}
+                        className={cn(
+                          "cursor-pointer border-b border-border/60 hover:bg-muted/40",
+                          monthSel === m.month && "bg-primary/10"
+                        )}
+                      >
+                        <td className="whitespace-nowrap px-3 py-2 font-semibold">
+                          {monthSel === m.month && <span className="mr-1 text-primary">▾</span>}
+                          {m.label}
+                        </td>
                         <td className="px-3 py-2">
                           {m.closed}
                           {m.open > 0 && <span className="ml-1 text-muted-foreground">(+{m.open} open)</span>}
@@ -495,6 +550,78 @@ export default function FibBacktestPage() {
                     </tr>
                   </tfoot>
                 </table>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Day drilldown for the selected month */}
+          {monthSel && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
+                  <CalendarDays className="size-4" /> {monthLabel(monthSel)} — day by day
+                  <span className="text-[10px] font-normal text-muted-foreground">
+                    ({monthTrades.length} trades on {dayRows.length} active days)
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto h-7 text-[11px]"
+                    onClick={() => { setMonthSel(null); setDaySel(null); }}
+                  >
+                    Clear
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                <TradesCalendar
+                  monthKey={monthSel}
+                  days={dayRows}
+                  selectedDay={daySel}
+                  onDayClick={(d) => setDaySel(daySel === d ? null : d)}
+                />
+
+                {/* Per-day table — every active day in the month */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border text-left text-muted-foreground">
+                        {["Day", "Weekday", "Trades", "W / L", "Win Rate", "Net R"].map((h) => (
+                          <th key={h} className="whitespace-nowrap px-3 py-2 font-medium">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="font-mono tnum">
+                      {dayRows.map((d) => {
+                        const weekday = new Date(`${d.key}T00:00:00Z`).toLocaleDateString(undefined, {
+                          weekday: "short", timeZone: "UTC",
+                        });
+                        return (
+                          <tr
+                            key={d.key}
+                            onClick={() => setDaySel(daySel === d.key ? null : d.key)}
+                            className={cn(
+                              "cursor-pointer border-b border-border/60 hover:bg-muted/40",
+                              daySel === d.key && "bg-primary/10"
+                            )}
+                          >
+                            <td className="whitespace-nowrap px-3 py-2 font-semibold">{d.key}</td>
+                            <td className="px-3 py-2 text-muted-foreground">{weekday}</td>
+                            <td className="px-3 py-2">{d.signals}</td>
+                            <td className="whitespace-nowrap px-3 py-2">
+                              <span className="text-bull">{d.wins}</span> / <span className="text-bear">{d.losses}</span>
+                            </td>
+                            <td className={cn("px-3 py-2", d.winRate >= 50 ? "text-bull" : "text-bear")}>{pct(d.winRate)}</td>
+                            <td className={cn("px-3 py-2", d.netR > 0 ? "text-bull" : d.netR < 0 ? "text-bear" : "")}>
+                              {d.netR > 0 ? "+" : ""}{d.netR}R
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
               </CardContent>
             </Card>
           )}
@@ -551,10 +678,71 @@ export default function FibBacktestPage() {
 
           <Separator />
 
+          {/* Session breakdown for the current scope (view filter, no re-run) */}
+          {dayScoped.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
+                  <Clock className="size-4" /> Session breakdown
+                  <span className="text-[10px] font-normal text-muted-foreground">
+                    {daySel ? daySel : monthSel ? monthLabel(monthSel) : "all results"} · IST windows ·
+                    click to filter the table below
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <SessionBreakdown
+                  sessions={sessionRows}
+                  selected={sessionSel}
+                  onToggle={(k) =>
+                    setSessionSel((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]))
+                  }
+                  onSelectCombo={(keys) =>
+                    setSessionSel((prev) =>
+                      prev.length === keys.length && keys.every((k) => prev.includes(k)) ? [] : keys
+                    )
+                  }
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {(monthSel || daySel || sessionSel.length > 0) && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>
+                Showing{" "}
+                <strong className="text-foreground">
+                  {daySel ? daySel : monthSel ? monthLabel(monthSel) : "all dates"}
+                </strong>
+                {sessionSel.length > 0 && (
+                  <>
+                    {" · "}
+                    <strong className="text-foreground">
+                      {sessionSel.map((k) => SESSIONS.find((s) => s.key === k)?.label || k).join(", ")}
+                    </strong>
+                  </>
+                )}{" "}
+                — {tradeList.length} of {allTrades.length} trades
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-[11px]"
+                onClick={() => { setMonthSel(null); setDaySel(null); setSessionSel([]); }}
+              >
+                Show all
+              </Button>
+            </div>
+          )}
+
           {tradeList.length > 0 ? (
             <TradesTable trades={tradeList} onTradeClick={setSelectedTrade} />
           ) : (
-            <p className="py-8 text-center text-sm text-muted-foreground">No trades found for this configuration.</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              {monthSel || daySel || sessionSel.length > 0
+                ? "No trades match this selection."
+                : "No trades found for this configuration."}
+            </p>
           )}
         </div>
       )}

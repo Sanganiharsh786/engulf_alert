@@ -147,15 +147,27 @@ export function TradingViewChart({ trade, rows, signalTs }) {
           }))
         );
 
-        // SL / TP filled risk-reward zones (start at signal candle, extend to last bar)
+        // SL / TP filled risk-reward zones.
+        //
+        // They start at the signal candle and end at the bar the trade actually
+        // closed on — NOT at the last bar on screen. Stretching them to the
+        // right edge made a trade that resolved in 3 bars look identical to one
+        // that ran for 50, and left the boxes drawn over candles that were never
+        // part of the trade.
         const sigSec = Math.floor(Number(signalTs ?? trade.ts) / 1000);
         const lastSec = Math.floor(rows[rows.length - 1][0] / 1000);
+        const exitMs = Number(trade.exitTs);
+        // snap the exit to a bar that exists in this window, else run to the edge
+        const exitSec = Number.isFinite(exitMs)
+          ? Math.min(lastSec, Math.max(sigSec, Math.floor(exitMs / 1000)))
+          : lastSec;
+        const zoneEndSec = exitSec > sigSec ? exitSec : lastSec;
         if (sigSec && lastSec > sigSec && trade.entry != null) {
           if (trade.tp != null) {
             candleSeries.attachPrimitive(
               makeZonePrimitive(
                 sigSec,
-                lastSec,
+                zoneEndSec,
                 Number(trade.entry),
                 Number(trade.tp),
                 "rgba(38, 166, 154, 0.22)",
@@ -167,7 +179,7 @@ export function TradingViewChart({ trade, rows, signalTs }) {
             candleSeries.attachPrimitive(
               makeZonePrimitive(
                 sigSec,
-                lastSec,
+                zoneEndSec,
                 Number(trade.entry),
                 Number(trade.stop),
                 "rgba(239, 83, 80, 0.22)",
@@ -176,21 +188,36 @@ export function TradingViewChart({ trade, rows, signalTs }) {
             );
           }
         }
-        // Marker on the engulfing signal candle.
+        // Markers: the entry (signal) candle, and the candle the trade closed on.
         const sigTs = Number(signalTs ?? trade.ts);
+        const markers = [];
         if (sigTs) {
           const bullish = trade.direction === "bullish";
-          candleSeries.setMarkers([
-            {
-              time: Math.floor(sigTs / 1000),
-              position: bullish ? "belowBar" : "aboveBar",
-              color: "#3b82f6",
-              shape: bullish ? "arrowUp" : "arrowDown",
-              text: `${(trade.direction || "").toUpperCase()} ${trade.strategy === "crt" ? "CRT" : "ENGULFING"}`,
-              size: 2,
-            },
-          ]);
+          const label =
+            trade.strategy === "crt" ? "CRT" : trade.strategy === "fib" ? "FIB" : "ENGULFING";
+          markers.push({
+            time: Math.floor(sigTs / 1000),
+            position: bullish ? "belowBar" : "aboveBar",
+            color: "#3b82f6",
+            shape: bullish ? "arrowUp" : "arrowDown",
+            text: `${(trade.direction || "").toUpperCase()} ${label}`,
+            size: 2,
+          });
         }
+        // Exit marker — makes it obvious which candle resolved the trade.
+        if (Number.isFinite(exitMs) && exitSec > sigSec) {
+          const won = trade.outcome === "win";
+          const lost = trade.outcome === "loss";
+          markers.push({
+            time: exitSec,
+            position: trade.direction === "bullish" ? "aboveBar" : "belowBar",
+            color: won ? "#26a69a" : lost ? "#ef5350" : "#94a3b8",
+            shape: "circle",
+            text: won ? "TP" : lost ? "SL" : "EXIT",
+            size: 1,
+          });
+        }
+        if (markers.length) candleSeries.setMarkers(markers);
 
         chart.timeScale().fitContent();
       } catch (e) {

@@ -111,9 +111,29 @@ also rejected if its stop is wider than `maxRiskPercent` of the entry price
 The API response reports `candidates` (all setups that confirmed) and `skipped`
 (how many each limit rejected).
 
-**Session filter (`sessionFilter`, UTC)** — `ALL` | `LONDON` (08–17) |
-`NEWYORK` (13–22) | `LONDON_NY` | `CUSTOM` (`customSessionStart/End`, may wrap
-past midnight). Confirmation outside the session does not trigger a trade.
+**Session filter (`sessionFilter`)** — confirmation outside the selected session
+does not trigger a trade. Windows are defined once in **`lib/sessions.js`** and
+expressed in **IST (UTC+5:30)**, the same clock as the `time` column in the
+trades table, so a filter always means the same thing as the session label shown
+against a trade:
+
+| Session | IST window |
+| --- | --- |
+| Sydney | 02:30–05:30 |
+| Tokyo | 05:30–12:30 |
+| London | 12:30–17:30 |
+| New York | 17:30–02:30 (+1) |
+
+Values: `ALL` | `SYDNEY` | `TOKYO` | `LONDON` | `NEWYORK` | `SYDNEY_TOKYO` |
+`TOKYO_LONDON` | `LONDON_NY` | `CUSTOM` (`customSessionStart/End`, also IST, may
+wrap past midnight).
+
+Every trade carries a `session` key for the window its entry fell in, and
+`stats.sessions` gives a per-session breakdown — with a filter active, only that
+session should appear.
+
+> The filter is applied **at entry time inside the backtest**, not to the table
+> afterwards. Changing it does nothing until you press **Run Backtest** again.
 
 ## Fibonacci calculation
 
@@ -202,6 +222,40 @@ Alongside the table: `monthsProfitable`, `monthsLosing`, `avgMonthlyReturnPct`,
 
 To get a meaningful month-wise view, run with enough history — e.g. `days: 365`
 on the `4h` or `1d` timeframe, or use an explicit `from`/`to` range.
+
+### Drilling down: month → day → session → trade
+
+The results are a drilldown, each level scoping everything below it:
+
+1. **Click a month row** in Monthly Performance → opens a day view for that month:
+   a calendar heat-grid plus a per-day table (date, weekday, trades, W/L, win
+   rate, net R).
+2. **Click a day** (in the calendar or the table) → scopes to that date.
+3. **Click a session card** → narrows to Sydney/Tokyo/London/New York. Combos
+   are available too.
+4. **Click a trade row** → opens the chart dialog for that setup.
+
+A "Showing … — N of M trades" line sits above the table with a **Show all**
+reset. Note the distinction: the session **cards** are a view filter applied to
+results already returned, so they update instantly; the session dropdown in the
+config panel is a **strategy** filter that changes which trades the backtest
+takes at all, and needs a re-run.
+
+## Trade chart dialog
+
+`exitTs` / `exitTime` on each trade drive the chart:
+
+- The chart API window is sized to **always include the bar the trade closed
+  on**, plus 8 candles of trailing context. It previously used a fixed 30-bar
+  forward window, which silently cut the exit off-screen for any trade that took
+  longer than that to resolve — the cause of "some trades draw correctly, some
+  don't".
+- The red (risk) and green (reward) boxes now **end at the exit bar** instead of
+  running to the right edge, so the shaded area covers exactly the bars the trade
+  was live for.
+- The exit candle carries a **TP / SL / EXIT marker**.
+- Fib trades show a TP1/TP2/TP3 panel with each level's price and whether it was
+  hit, plus the exit time and whether the stop moved to break-even.
 
 ## Configuration
 

@@ -1,4 +1,19 @@
-export const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+// Sessions live in lib/sessions.js so the strategy-level session FILTER and the
+// session LABELS in the trades table can never drift apart.
+//
+// Imported (not just re-exported) because the helpers below use them directly —
+// a bare `export ... from` would re-export the names without binding them in
+// this module's scope.
+import {
+  IST_OFFSET_MS,
+  SESSIONS,
+  SESSION_COMBOS,
+  sessionOf,
+  sessionKeyOfTs,
+} from "@/lib/sessions";
+
+// re-exported so existing imports from this module keep working
+export { IST_OFFSET_MS, SESSIONS, SESSION_COMBOS, sessionOf, sessionKeyOfTs };
 
 export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -11,47 +26,6 @@ export function monthLabel(key) {
   const [y, m] = key.split("-");
   return `${MONTHS[Number(m) - 1]} ${y}`;
 }
-
-// Forex trading sessions, expressed in IST (UTC+5:30) minutes-of-day.
-// Windows are non-overlapping and cover the full 24h so every trade maps to
-// exactly one session. New York wraps past midnight.
-function hm(min) {
-  const h = Math.floor((((min % 1440) + 1440) % 1440) / 60);
-  const m = (((min % 60) + 60) % 60);
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
-export const SESSIONS = [
-  { key: "sydney", label: "Sydney", short: "SYD", start: 150, end: 330 }, // 02:30–05:30
-  { key: "tokyo", label: "Tokyo", short: "TYO", start: 330, end: 750 }, // 05:30–12:30
-  { key: "london", label: "London", short: "LDN", start: 750, end: 1050 }, // 12:30–17:30
-  { key: "newyork", label: "New York", short: "NY", start: 1050, end: 150 }, // 17:30–02:30 (+1)
-].map((s) => ({ ...s, window: `${hm(s.start)}–${hm(s.end)}` }));
-
-// classify a trade's IST time string ("YYYY-MM-DDTHH:MM…") into a session key
-export function sessionOf(time) {
-  if (!time) return "newyork";
-  const [h, m] = time.slice(11, 16).split(":").map(Number);
-  const min = h * 60 + m;
-  for (const s of SESSIONS) {
-    if (s.start < s.end) {
-      if (min >= s.start && min < s.end) return s.key;
-    } else if (min >= s.start || min < s.end) {
-      return s.key;
-    }
-  }
-  return "newyork";
-}
-
-// Preset session combinations ("overlaps"). Each combo is the union of two
-// adjacent sessions, matching how traders think about back-to-back / overlap
-// activity. `keys` map to SESSIONS keys and plug straight into the existing
-// union-based session filter.
-export const SESSION_COMBOS = [
-  { key: "syd_tyo", label: "Sydney + Tokyo", short: "SYD+TYO", keys: ["sydney", "tokyo"] },
-  { key: "tyo_ldn", label: "Tokyo + London", short: "TYO+LDN", keys: ["tokyo", "london"] },
-  { key: "ldn_ny", label: "London + New York", short: "LDN+NY", keys: ["london", "newyork"] },
-];
 
 // Merge per-session summaries into one aggregate stat for a set of session keys.
 export function mergeSessionStats(sessions, keys) {
