@@ -24,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
+import { Pagination, usePagination } from "@/components/backtest/pagination";
 import { Spinner } from "@/components/backtest/spinner";
 import { NewsCalendar } from "@/components/backtest/calendars";
 import { NewsChartDialog } from "@/components/backtest/news-chart-dialog";
@@ -134,6 +135,8 @@ export function NewsSection() {
     }
     return [...s].sort();
   }, [newsEvents]);
+
+  const newsPager = usePagination(newsEvents, 25);
 
   const newsDayMap = useMemo(() => {
     if (!newsEvents || !newsMonthSel) return {};
@@ -297,7 +300,7 @@ export function NewsSection() {
                     </TableRow>
                   </TableHeader>
                   <TableBody className="font-mono text-xs tnum">
-                    {newsEvents.map((ev, i) => {
+                    {newsPager.pageItems.map((ev, i) => {
                       const d = new Date(ev.ts);
                       const istDate = new Date(d.getTime() + IST_OFFSET_MS);
                       const dateStr = istDate.toISOString().slice(0, 10);
@@ -342,6 +345,7 @@ export function NewsSection() {
                   </TableBody>
                 </Table>
               </div>
+              <Pagination pagination={newsPager} label="events" />
             </CardContent>
           </Card>
         </>

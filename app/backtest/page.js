@@ -22,6 +22,7 @@ import { TradesCalendar } from "@/components/backtest/calendars";
 import { TradesTable } from "@/components/backtest/trades-table";
 import { TradeChartDialog } from "@/components/backtest/trade-chart-dialog";
 import { NewsSection } from "@/components/backtest/news-section";
+import { NewsReactionSection } from "@/components/backtest/news-reaction-section";
 import { SessionBreakdown } from "@/components/backtest/session-breakdown";
 import { RRComparison } from "@/components/backtest/rr-comparison";
 import { HourlyAnalysis } from "@/components/backtest/hourly-analysis";
@@ -746,6 +747,12 @@ export default function Backtest() {
           <Separator className="mt-10" />
           <div className="mt-8">
             <NewsSection />
+          </div>
+
+          {/* what price does AFTER the news candle closes */}
+          <Separator className="mt-10" />
+          <div className="mt-8">
+            <NewsReactionSection />
           </div>
         </>
       )}
