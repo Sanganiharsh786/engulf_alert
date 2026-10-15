@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { TF_MS, aggregate1m, bucketStart } from "@/lib/newsReaction";
 
 /* ---------- TradingView-style Chart (lightweight-charts) ---------- */
 // Uses TradingView's free open-source lightweight-charts library so we can
@@ -264,6 +265,152 @@ export function TradingViewChart({ trade, rows, signalTs }) {
     />
   );
 }
+
+/* ---------- Post-news reaction chart (1m / 15m / 1h) ---------- */
+
+// lightweight-charts only maps a time to an x-coordinate if that exact time is
+// in the series, so a drawing time has to be snapped onto a real bar.
+function snapTime(times, sec) {
+  if (!times.length) return null;
+  let best = times[0];
+  let bestDiff = Math.abs(times[0] - sec);
+  for (const t of times) {
+    const d = Math.abs(t - sec);
+    if (d < bestDiff) { best = t; bestDiff = d; }
+  }
+  return best;
+}
+
+/**
+ * The news candle and what happened after it.
+ *
+ * Deliberately bare: just the candles, the news candle's HIGH and LOW, and one
+ * marker on the news candle itself. Everything else — the verdicts, the run and
+ * the pullback — is read off the cards under the chart, where it stays legible.
+ */
+export function NewsReactionChart({ rows, news, tf = "1m" }) {
+  const containerRef = useRef(null);
+  const chartRef = useRef(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (!containerRef.current || !rows || rows.length === 0 || !news) return;
+    let chart = null;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const lwc = await import("lightweight-charts");
+        if (cancelled || !containerRef.current) return;
+
+        const sizeMs = TF_MS[tf] || TF_MS["1m"];
+        const data = tf === "1m" ? rows : aggregate1m(rows, sizeMs);
+        if (!data.length) return;
+
+        chart = lwc.createChart(containerRef.current, {
+          layout: {
+            background: { type: lwc.ColorType.Solid, color: "#0e1422" },
+            textColor: "#e8edff",
+            fontFamily: "ui-sans-serif, system-ui, sans-serif",
+          },
+          grid: { vertLines: { color: "#1e2840" }, horzLines: { color: "#1e2840" } },
+          crosshair: { mode: lwc.CrosshairMode.Normal },
+          rightPriceScale: { borderColor: "#1e2840", scaleMargins: { top: 0.12, bottom: 0.22 } },
+          timeScale: { borderColor: "#1e2840", timeVisible: true, secondsVisible: false },
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight,
+        });
+        chartRef.current = chart;
+
+        const candleSeries = chart.addCandlestickSeries({
+          upColor: "#26a69a", downColor: "#ef5350",
+          borderUpColor: "#26a69a", borderDownColor: "#ef5350",
+          wickUpColor: "#26a69a", wickDownColor: "#ef5350",
+        });
+        candleSeries.setData(
+          data.map((r) => ({ time: Math.floor(r[0] / 1000), open: r[1], high: r[2], low: r[3], close: r[4] }))
+        );
+
+        const volumeSeries = chart.addHistogramSeries({
+          priceFormat: { type: "volume" },
+          priceScaleId: "volume",
+          color: "#26a69a44",
+        });
+        chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.88, bottom: 0 } });
+        volumeSeries.setData(
+          data.map((r) => ({
+            time: Math.floor(r[0] / 1000),
+            value: r[5],
+            color: r[4] >= r[1] ? "#26a69a44" : "#ef535044",
+          }))
+        );
+
+        // The only drawings: the news candle's high and low.
+        candleSeries.createPriceLine({
+          price: news.h, color: "#f1c40f", lineWidth: 1,
+          lineStyle: lwc.LineStyle.Dashed, axisLabelVisible: true, title: "news high",
+        });
+        candleSeries.createPriceLine({
+          price: news.l, color: "#f1c40f", lineWidth: 1,
+          lineStyle: lwc.LineStyle.Dashed, axisLabelVisible: true, title: "news low",
+        });
+
+        // One marker so you can tell which candle is the news candle.
+        const times = data.map((r) => Math.floor(r[0] / 1000));
+        const newsBarSec = Math.floor(
+          (tf === "1m" ? news.ts : bucketStart(news.ts, sizeMs)) / 1000
+        );
+        const markerTime = snapTime(times, newsBarSec);
+        if (markerTime != null) {
+          candleSeries.setMarkers([
+            {
+              time: markerTime,
+              position: news.dir < 0 ? "aboveBar" : "belowBar",
+              color: "#f1c40f",
+              shape: news.dir < 0 ? "arrowDown" : "arrowUp",
+              text: "NEWS",
+              size: 1,
+            },
+          ]);
+        }
+
+        chart.timeScale().fitContent();
+      } catch (e) {
+        if (!cancelled) setErr(String(e.message || e));
+      }
+    })();
+
+    const onResize = () => {
+      if (chartRef.current && containerRef.current) {
+        chartRef.current.applyOptions({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight,
+        });
+      }
+    };
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("resize", onResize);
+      if (chartRef.current) {
+        try { chartRef.current.remove(); } catch { /* silent */ }
+        chartRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, news, tf]);
+
+  if (err) return <div className="flex h-80 items-center justify-center text-sm text-bear">{err}</div>;
+
+  return (
+    <div
+      ref={containerRef}
+      className="h-[300px] min-h-[300px] w-full overflow-hidden rounded-lg bg-[#0e1422] sm:h-[420px] sm:min-h-[420px]"
+    />
+  );
+}
+
 
 /* ---------- Simplified lightweight-charts for news events ---------- */
 

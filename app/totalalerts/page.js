@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Pagination, usePagination } from "@/components/backtest/pagination";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -175,6 +176,9 @@ export default function TotalAlerts() {
 
   const stats = useMemo(() => buildStats(alerts || []), [alerts]);
 
+  const pager = usePagination(visible, 25);
+  const pageAlerts = pager.pageItems;
+
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6">
       <header className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
@@ -257,7 +261,7 @@ export default function TotalAlerts() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {visible.map((a) => (
+                  {pageAlerts.map((a) => (
                     <TableRow key={a.id} className={cn(a.placed && "bg-bull/5")}>
                       <TableCell>
                         <Checkbox
@@ -304,11 +308,12 @@ export default function TotalAlerts() {
                 </TableBody>
               </Table>
             </div>
+            <Pagination pagination={pager} label="alerts" />
           </Card>
 
           {/* mobile cards */}
           <div className="mt-4 flex flex-col gap-3 md:hidden">
-            {visible.map((a) => (
+            {pageAlerts.map((a) => (
               <Card key={a.id} className={cn(a.placed && "border-bull/40 bg-bull/5")}>
                 <CardContent className="flex flex-col gap-3">
                   <div className="flex items-start justify-between gap-3">
@@ -366,6 +371,9 @@ export default function TotalAlerts() {
                 </CardContent>
               </Card>
             ))}
+            <Card className="py-0 md:hidden">
+              <Pagination pagination={pager} label="alerts" className="border-t-0" />
+            </Card>
           </div>
         </>
       )}

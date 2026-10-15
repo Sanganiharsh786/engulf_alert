@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Pagination, usePagination } from "@/components/backtest/pagination";
 import { cn } from "@/lib/utils";
 import { SESSIONS, fmt, sessionOf } from "@/components/backtest/utils";
 
@@ -65,6 +66,8 @@ function DnaCell({ t }) {
 
 export function TradesTable({ trades, onTradeClick }) {
   const hasDna = trades.some((t) => t.dnaPass !== undefined);
+  const pager = usePagination(trades, 50);
+  const pageTrades = pager.pageItems;
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -92,9 +95,9 @@ export function TradesTable({ trades, onTradeClick }) {
               </TableRow>
             </TableHeader>
             <TableBody className="font-mono text-xs tnum">
-              {trades.map((t, i) => (
+              {pageTrades.map((t, i) => (
                 <TableRow
-                  key={i}
+                  key={`${t.time}-${t.pair}-${i}`}
                   className="cursor-pointer"
                   onClick={() => onTradeClick(t)}
                   title="Click to view chart"
@@ -139,9 +142,9 @@ export function TradesTable({ trades, onTradeClick }) {
 
         {/* Mobile card list */}
         <div className="flex flex-col divide-y divide-border md:hidden">
-          {trades.map((t, i) => (
+          {pageTrades.map((t, i) => (
             <button
-              key={i}
+              key={`${t.time}-${t.pair}-${i}`}
               onClick={() => onTradeClick(t)}
               className="flex flex-col gap-2 px-4 py-3 text-left transition-colors hover:bg-popover"
             >
@@ -190,6 +193,8 @@ export function TradesTable({ trades, onTradeClick }) {
             No trades match the current filters.
           </div>
         )}
+
+        <Pagination pagination={pager} label="trades" />
       </CardContent>
     </Card>
   );
