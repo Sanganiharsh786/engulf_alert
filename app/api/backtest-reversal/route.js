@@ -14,6 +14,8 @@ export const maxDuration = 60;
 // small enough to send. Above this the UI hides the chart for that timeframe
 // rather than shipping megabytes of JSON.
 const MAX_CHART_BARS = 6000;
+// across all pair × timeframe results in one response
+const TOTAL_CHART_BARS = 24000;
 
 // The accepted config keys are derived from the strategy defaults, so a new
 // option in DEFAULT_CONFIG is accepted here automatically with the right type.
@@ -32,6 +34,19 @@ function readConfig(c = {}) {
   for (const k of STR_KEYS) if (typeof c[k] === "string" && c[k]) config[k] = c[k];
   for (const k of BOOL_KEYS) if (typeof c[k] === "boolean") config[k] = c[k];
   return config;
+}
+
+// The page asks for the instrument list on load, so the pair selector always
+// reflects whatever is configured on the dashboard (BTC, ETH, EUR, gold…).
+export async function GET() {
+  const user = await currentUser();
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const store = await readStore(user);
+  return NextResponse.json({
+    pairs: (store.pairs || []).map((p) => ({
+      name: p.name, market: p.market || "", exchange: p.exchange, symbol: p.symbol,
+    })),
+  });
 }
 
 export async function POST(req) {
@@ -88,8 +103,10 @@ export async function POST(req) {
       if (!pairs.length) {
         return NextResponse.json({ error: "No pairs configured. Add a pair on the dashboard, or upload a CSV." }, { status: 400 });
       }
-      const pair = (b.pair && pairs.find((p) => p.name === b.pair)) || pairs[0];
-      opts.pair = pair;
+      // accept a list of names; fall back to the first configured pair
+      const wanted = Array.isArray(b.pairs) ? b.pairs : b.pair ? [b.pair] : [];
+      const selected = pairs.filter((p) => wanted.includes(p.name));
+      opts.pairs = selected.length ? selected : [pairs[0]];
       opts.source = "exchange";
       if (Number(b.from) && Number(b.to)) {
         opts.from = Number(b.from);
@@ -103,16 +120,24 @@ export async function POST(req) {
 
     // trim the payload: drop the per-bar state array, and only ship candles
     // for timeframes small enough to chart
+    // Trim the payload: drop the per-bar state array, and ship candles only
+    // while they fit a total budget. With several pairs × several timeframes
+    // the raw candles would otherwise run to tens of megabytes. Smallest
+    // series are served first, so the high timeframes you actually want to
+    // eyeball keep their charts.
+    const order = [...out.results].sort((a, z) => (a.rows?.length || 0) - (z.rows?.length || 0));
+    const shipped = new Set();
+    let budget = TOTAL_CHART_BARS;
+    for (const r of order) {
+      const n = r.rows?.length || 0;
+      if (n && n <= MAX_CHART_BARS && n <= budget) { shipped.add(r.id); budget -= n; }
+    }
     out.results = out.results.map((r) => {
       const { states, rows, ...rest } = r;
-      return {
-        ...rest,
-        rows: rows && rows.length <= MAX_CHART_BARS ? rows : null,
-        rowsOmitted: !!(rows && rows.length > MAX_CHART_BARS),
-      };
+      const keep = shipped.has(r.id);
+      return { ...rest, rows: keep ? rows : null, rowsOmitted: !keep };
     });
     out.days = opts.days || null;
-    out.pair = opts.pair?.name || null;
     return NextResponse.json(out);
   } catch (e) {
     return NextResponse.json({ error: String(e.message || e) }, { status: 500 });

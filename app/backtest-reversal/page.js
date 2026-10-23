@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, ArrowLeft, BarChart3, Download, FileUp, Play, RefreshCw,
 } from "lucide-react";
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { ReversalChart } from "@/components/backtest/reversal-chart";
 import { DEFAULT_CONFIG, TIMEFRAMES } from "@/lib/reversalStrategy";
+import { SESSION_FILTERS } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
 
 const money = (n) =>
@@ -75,6 +76,49 @@ function Stat({ label, value, tone }) {
   );
 }
 
+// One table shape for every breakdown (month, week, weekday, session,
+// direction, exit reason) — they all come from the same `breakdown()` helper
+// in lib/reversalBacktest.js, so they all report the same columns.
+function BreakTable({ title, rows, firstCol = "Bucket", note }) {
+  return (
+    <div>
+      <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
+      {note && <div className="mb-1 text-[10px] text-muted-foreground">{note}</div>}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="text-[10px] uppercase text-muted-foreground">
+            <tr className="border-b border-border">
+              <th className="px-2 py-1 text-left">{firstCol}</th>
+              {["Trades", "Win %", "Net P&L", "PF", "Exp (R)", "Max DD", "Avg bars"].map((h) => (
+                <th key={h} className="px-2 py-1 text-right">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="font-mono tabular-nums">
+            {rows?.map((r) => (
+              <tr key={r.key} className="border-b border-border/50">
+                <td className="px-2 py-1">{r.label}</td>
+                <td className="px-2 py-1 text-right">{r.trades}</td>
+                <td className="px-2 py-1 text-right">{pct(r.winRate)}</td>
+                <td className={cn("px-2 py-1 text-right font-bold", r.netProfit > 0 ? "text-emerald-500" : r.netProfit < 0 ? "text-red-500" : "")}>
+                  {money(r.netProfit)}
+                </td>
+                <td className="px-2 py-1 text-right">{r.profitFactor == null ? "∞" : num(r.profitFactor)}</td>
+                <td className="px-2 py-1 text-right">{num(r.expectancy, 3)}</td>
+                <td className="px-2 py-1 text-right text-red-400">{money(r.maxDrawdown)}</td>
+                <td className="px-2 py-1 text-right text-muted-foreground">{num(r.avgBarsHeld, 1)}</td>
+              </tr>
+            ))}
+            {!rows?.length && (
+              <tr><td colSpan={8} className="py-3 text-center text-muted-foreground">No closed trades.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // Minimal inline SVG line chart — avoids pulling a chart lib for two curves.
 function LineChart({ points, valueKey, height = 160, color = "#60a5fa", zeroBase = false }) {
   if (!points || points.length < 2) {
@@ -107,21 +151,22 @@ function LineChart({ points, valueKey, height = 160, color = "#60a5fa", zeroBase
 }
 
 // ---------------------------------------------------------------------------
-const ENTRY_MODES = ["SECOND_CANDLE_CLOSE", "SECOND_CANDLE_HIGH_BREAK", "SWING_HIGH_BREAK"];
 const RESUME_MODES = [
-  "NEW_HIGH", "BULL_CLOSE_ABOVE_PULLBACK_HIGH", "BULL_CLOSE_ABOVE_PRIOR_HIGH", "N_BULL_CANDLES",
+  "NEW_HIGH", "CLOSE_ABOVE_PULLBACK_EXTREME", "CLOSE_ABOVE_PRIOR_BAR",
 ];
-const LEG_MODES = ["NONE", "PERCENT", "ATR", "EITHER", "BOTH"];
 const SIZING_MODES = ["RISK_PERCENT", "FIXED_RISK", "FIXED_QTY", "FIXED_NOTIONAL"];
 const HTF_MODES = ["NONE", "CANDLE_COLOR", "EMA"];
 const HTF_TFS = ["15m", "1h", "4h", "1d"];
 const EXIT_FILLS = ["CLOSE", "NEXT_OPEN"];
 const DIP_REFS = ["CANDLE_LOW", "CANDLE_CLOSE"];
 const DOJI = ["NEUTRAL", "BULL", "BEAR"];
+const SESSION_OPTS = [...Object.keys(SESSION_FILTERS), "CUSTOM"];
 
 export default function ReversalBacktestPage() {
   const [cfg, setCfg] = useState({ ...DEFAULT_CONFIG });
   const [timeframes, setTimeframes] = useState(["5m", "15m", "1h", "4h"]);
+  const [allPairs, setAllPairs] = useState([]);
+  const [pairs, setPairs] = useState([]);
   const [days, setDays] = useState(30);
   const [csv, setCsv] = useState(null); // { name, text }
   const [running, setRunning] = useState(false);
@@ -133,13 +178,34 @@ export default function ReversalBacktestPage() {
 
   const set = (k) => (v) => setCfg((c) => ({ ...c, [k]: v }));
 
+  // Instrument list comes from the dashboard's own pair config, so gold
+  // (PAXGUSDT.P) and anything else you add there shows up here automatically.
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/backtest-reversal");
+        if (!r.ok) return;
+        const j = await r.json();
+        if (dead || !j.pairs?.length) return;
+        setAllPairs(j.pairs);
+        setPairs((cur) => (cur.length ? cur : j.pairs.map((p) => p.name)));
+      } catch { /* the selector just stays empty */ }
+    })();
+    return () => { dead = true; };
+  }, []);
+
+  // `activeTf` holds a result id ("PAIR|tf") so the same timeframe on two
+  // different instruments stays distinguishable.
   const active = useMemo(() => {
-    if (!res) return null;
-    return res.results.find((r) => r.timeframe === activeTf) || res.results[0] || null;
+    if (!res?.results?.length) return null;
+    return res.results.find((r) => r.id === activeTf) || res.results[0];
   }, [res, activeTf]);
 
   const toggleTf = (tf) =>
     setTimeframes((list) => (list.includes(tf) ? list.filter((x) => x !== tf) : [...list, tf]));
+  const togglePair = (name) =>
+    setPairs((list) => (list.includes(name) ? list.filter((x) => x !== name) : [...list, name]));
 
   async function onFile(e) {
     const f = e.target.files?.[0];
@@ -154,7 +220,7 @@ export default function ReversalBacktestPage() {
     setRunning(true);
     setError("");
     try {
-      const body = { config: cfg, timeframes, days: Number(days) || 30 };
+      const body = { config: cfg, timeframes, days: Number(days) || 30, pairs };
       if (csv) { body.csv = csv.text; body.symbol = csv.name; }
       const r = await fetch("/api/backtest-reversal", {
         method: "POST",
@@ -168,7 +234,7 @@ export default function ReversalBacktestPage() {
         return;
       }
       setRes(j);
-      setActiveTf(j.results[0]?.timeframe || null);
+      setActiveTf(j.results[0]?.id || null);
     } catch (e) {
       setError(String(e.message || e));
     } finally {
@@ -184,14 +250,17 @@ export default function ReversalBacktestPage() {
       "qty", "riskCash", "grossPnl", "fees", "netPnl", "r", "barsHeld", "holdMinutes",
       "pullbackCount", "resumeCount",
     ];
-    const lines = [["timeframe", ...cols].join(",")];
+    const lines = [["pair", "timeframe", "session", "month", "week", "weekday", ...cols].join(",")];
     for (const t of active.trades) {
-      lines.push([active.timeframe, ...cols.map((c) => t[c] ?? "")].join(","));
+      lines.push([
+        active.pair, active.timeframe, t.session, t.monthKey, t.weekKey, t.dowLabel,
+        ...cols.map((c) => t[c] ?? ""),
+      ].join(","));
     }
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `reversal-trades-${active.timeframe}.csv`;
+    a.download = `reversal-trades-${active.pair}-${active.timeframe}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   }
@@ -212,7 +281,7 @@ export default function ReversalBacktestPage() {
         </h1>
         {res && (
           <Badge variant={res.source === "csv" ? "secondary" : "outline"} className="font-mono text-[10px]">
-            {res.source === "csv" ? `CSV · ${res.symbol}` : `LIVE · ${res.pair || res.symbol}`}
+            {res.source === "csv" ? "CSV" : "LIVE"} · {(res.pairs || []).join(", ")}
           </Badge>
         )}
       </div>
@@ -227,6 +296,29 @@ export default function ReversalBacktestPage() {
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">1 · Data</CardTitle></CardHeader>
         <CardContent className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1">
+            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              Instruments {csv && <span className="normal-case text-amber-500">(ignored — CSV loaded)</span>}
+            </Label>
+            <div className="flex flex-wrap gap-1">
+              {allPairs.map((p) => (
+                <button
+                  key={p.name}
+                  onClick={() => togglePair(p.name)}
+                  title={`${p.symbol} · ${p.market || "market"}`}
+                  className={cn(
+                    "h-8 rounded-md border px-2 font-mono text-xs",
+                    pairs.includes(p.name)
+                      ? "border-primary bg-primary/15 text-primary"
+                      : "border-border bg-card text-muted-foreground"
+                  )}
+                >
+                  {p.market === "gold" && "🥇 "}{p.name}
+                </button>
+              ))}
+              {!allPairs.length && <span className="text-xs text-muted-foreground">loading…</span>}
+            </div>
+          </div>
           <Num label="Days of history" value={days} onChange={setDays} min={1} w="w-24" />
           <div className="flex flex-col gap-1">
             <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Timeframes</Label>
@@ -309,11 +401,9 @@ export default function ReversalBacktestPage() {
           <div>
             <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Pattern</div>
             <div className="flex flex-wrap items-end gap-3">
-              <Sel label="Leg requirement" value={cfg.legMode} onChange={set("legMode")} options={LEG_MODES} w="w-36"
-                hint="How the prior directional move is required to qualify" />
               <Num label="Leg lookback (bars)" value={cfg.legLookback} onChange={set("legLookback")} min={1} />
-              <Num label="Min leg %" value={cfg.minLegPercent} onChange={set("minLegPercent")} step={0.1} min={0} />
-              <Num label="Min leg × ATR" value={cfg.minLegATR} onChange={set("minLegATR")} step={0.1} min={0} />
+              <Num label="Min leg %" value={cfg.minLegPercent} onChange={set("minLegPercent")} step={0.1} min={0}
+                hint="Required size of the prior move, % of the reference close. 0 = off" />
               <Num label="Bottom tolerance %" value={cfg.bottomTolerancePercent} onChange={set("bottomTolerancePercent")} step={0.05} min={0}
                 hint="How far above the window low a reversal candle's low may sit" />
               <Sel label="Dip reference" value={cfg.dipReference} onChange={set("dipReference")} options={DIP_REFS} w="w-40" />
@@ -321,21 +411,12 @@ export default function ReversalBacktestPage() {
               <Num label="Max dip %" value={cfg.maxDipPercent} onChange={set("maxDipPercent")} step={0.1} min={0}
                 hint="A dip deeper than this past the first reversal candle invalidates the setup" />
               <Sel label="Doji policy" value={cfg.dojiPolicy} onChange={set("dojiPolicy")} options={DOJI} w="w-28" />
-              <Num label="Min body × ATR" value={cfg.minBodyATR} onChange={set("minBodyATR")} step={0.1} min={0} />
               <Num label="Min body % of range" value={cfg.minBodyPercentOfRange} onChange={set("minBodyPercentOfRange")} step={5} min={0} />
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Entry</div>
-            <div className="flex flex-wrap items-end gap-3">
-              <Sel label="Entry confirmation" value={cfg.entryMode} onChange={set("entryMode")} options={ENTRY_MODES}
-                hint="Second-candle close, break of its high, or break of a confirmed swing high" />
-              <Num label="Confirmation expiry (bars)" value={cfg.confirmationExpiryBars} onChange={set("confirmationExpiryBars")} min={1} />
-              <Num label="Pivot left" value={cfg.pivotLeft} onChange={set("pivotLeft")} min={1} w="w-20" />
-              <Num label="Pivot right" value={cfg.pivotRight} onChange={set("pivotRight")} min={1} w="w-20" />
               <Chk label="Longs" checked={cfg.allowLong} onChange={set("allowLong")} />
               <Chk label="Shorts" checked={cfg.allowShort} onChange={set("allowShort")} />
+            </div>
+            <div className="mt-1 text-[10px] text-muted-foreground">
+              Entry is always the close of the second reversal candle.
             </div>
           </div>
 
@@ -350,9 +431,7 @@ export default function ReversalBacktestPage() {
                 hint="Retracement of the move from entry to the pre-pullback extreme. 0 = off" />
               <Chk label="Exit on failed continuation" checked={cfg.exitOnFailedContinuation} onChange={set("exitOnFailedContinuation")} />
               <Sel label="Continuation resumed when" value={cfg.resumeMode} onChange={set("resumeMode")} options={RESUME_MODES} w="w-72" />
-              <Num label="Resume bull candles" value={cfg.resumeBullCandles} onChange={set("resumeBullCandles")} min={1} />
               <Num label="Min resume %" value={cfg.minResumePercent} onChange={set("minResumePercent")} step={0.1} min={0} />
-              <Num label="Min resume × ATR" value={cfg.minResumeATR} onChange={set("minResumeATR")} step={0.1} min={0} />
               <Num label="Arm exit after N cycles" value={cfg.armAfterCycles} onChange={set("armAfterCycles")} min={0}
                 hint="1 = a red candle in the first leg up is a pullback, not an exit. 0 = exit on the first red after entry" />
               <Sel label="Exit fill" value={cfg.exitFill} onChange={set("exitFill")} options={EXIT_FILLS} w="w-36" />
@@ -362,11 +441,27 @@ export default function ReversalBacktestPage() {
           <div>
             <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Risk &amp; execution</div>
             <div className="flex flex-wrap items-end gap-3">
-              <Num label="SL buffer %" value={cfg.slBufferPercent} onChange={set("slBufferPercent")} step={0.05} min={0} />
-              <Num label="SL ATR buffer ×" value={cfg.atrStopMultiple} onChange={set("atrStopMultiple")} step={0.1} min={0} />
+              <Num label="SL buffer %" value={cfg.slBufferPercent} onChange={set("slBufferPercent")} step={0.05} min={0}
+                hint="Beyond the confirmed reversal swing low/high" />
               <Num label="Emergency stop %" value={cfg.emergencyStopPercent} onChange={set("emergencyStopPercent")} step={0.1} min={0} hint="0 = off" />
               <Num label="Max hold (bars)" value={cfg.maxHoldBars} onChange={set("maxHoldBars")} min={0} hint="0 = off" />
-              <Num label="ATR period" value={cfg.atrPeriod} onChange={set("atrPeriod")} min={2} w="w-20" />
+              <Separator orientation="vertical" className="h-10" />
+              <Sel label="Session filter" value={cfg.sessionFilter} onChange={set("sessionFilter")} options={SESSION_OPTS} w="w-44"
+                hint="IST windows — Sydney 02:30, Tokyo 05:30, London 12:30, New York 17:30" />
+              {cfg.sessionFilter === "CUSTOM" && (
+                <>
+                  <div className="flex flex-col gap-1">
+                    <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Custom start (IST)</Label>
+                    <Input value={cfg.customSessionStart} onChange={(e) => set("customSessionStart")(e.target.value)}
+                      className="h-8 w-24 font-mono text-xs" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Custom end (IST)</Label>
+                    <Input value={cfg.customSessionEnd} onChange={(e) => set("customSessionEnd")(e.target.value)}
+                      className="h-8 w-24 font-mono text-xs" />
+                  </div>
+                </>
+              )}
               <Separator orientation="vertical" className="h-10" />
               <Num label="Initial capital" value={cfg.initialCapital} onChange={set("initialCapital")} step={100} min={1} />
               <Sel label="Sizing" value={cfg.sizingMode} onChange={set("sizingMode")} options={SIZING_MODES} w="w-44" />
@@ -394,7 +489,7 @@ export default function ReversalBacktestPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">
-              3 · Results by timeframe
+              3 · Results by instrument &amp; timeframe
               <span className="ml-2 font-normal text-muted-foreground">
                 computed from {res.source === "csv" ? "your uploaded candles" : "live exchange candles"} · run at {when(res.ranAt)}
               </span>
@@ -404,7 +499,7 @@ export default function ReversalBacktestPage() {
             <table className="w-full text-xs">
               <thead className="text-[10px] uppercase tracking-wide text-muted-foreground">
                 <tr className="border-b border-border">
-                  {["TF", "Bars", "Trades", "Win %", "Net P&L", "Net %", "PF", "Expectancy (R)", "Max DD", "Max DD %", "Avg bars", "Avg hold", "Fees"].map((h) => (
+                  {["Pair", "TF", "Bars", "Trades", "Win %", "Net P&L", "Net %", "PF", "Expectancy (R)", "Max DD", "Max DD %", "Avg bars", "Avg hold", "Fees"].map((h) => (
                     <th key={h} className="px-2 py-1.5 text-right first:text-left">{h}</th>
                   ))}
                 </tr>
@@ -412,13 +507,14 @@ export default function ReversalBacktestPage() {
               <tbody className="font-mono tabular-nums">
                 {res.comparison.map((r) => (
                   <tr
-                    key={r.timeframe}
-                    onClick={() => setActiveTf(r.timeframe)}
+                    key={r.id}
+                    onClick={() => setActiveTf(r.id)}
                     className={cn(
                       "cursor-pointer border-b border-border/50 hover:bg-muted/40",
-                      activeTf === r.timeframe && "bg-primary/10"
+                      activeTf === r.id && "bg-primary/10"
                     )}
                   >
+                    <td className="px-2 py-1.5">{r.market === "gold" && "🥇 "}{r.pair}</td>
                     <td className="px-2 py-1.5 font-bold">{r.timeframe}</td>
                     <td className="px-2 py-1.5 text-right">{r.bars}</td>
                     <td className="px-2 py-1.5 text-right">{r.totalTrades}</td>
@@ -440,7 +536,7 @@ export default function ReversalBacktestPage() {
             </table>
             {res.errors?.length > 0 && (
               <div className="mt-2 space-y-1 text-[11px] text-amber-500">
-                {res.errors.map((e, i) => <div key={i}>⚠ {e.timeframe}: {e.error}</div>)}
+                {res.errors.map((e, i) => <div key={i}>⚠ {e.pair ? `${e.pair} ` : ""}{e.timeframe}: {e.error}</div>)}
               </div>
             )}
           </CardContent>
@@ -453,7 +549,7 @@ export default function ReversalBacktestPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">
-                4 · {active.timeframe} detail
+                4 · {active.pair} · {active.timeframe} detail
                 <span className="ml-2 font-normal text-muted-foreground">{active.bars} candles</span>
               </CardTitle>
             </CardHeader>
@@ -486,57 +582,24 @@ export default function ReversalBacktestPage() {
               </div>
 
               <div className="grid gap-4 lg:grid-cols-2">
-                <div>
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">By direction</div>
-                  <table className="w-full text-xs">
-                    <thead className="text-[10px] uppercase text-muted-foreground">
-                      <tr className="border-b border-border">
-                        <th className="px-2 py-1 text-left">Direction</th>
-                        <th className="px-2 py-1 text-right">Trades</th>
-                        <th className="px-2 py-1 text-right">Win %</th>
-                        <th className="px-2 py-1 text-right">Net P&amp;L</th>
-                        <th className="px-2 py-1 text-right">Expectancy</th>
-                      </tr>
-                    </thead>
-                    <tbody className="font-mono tabular-nums">
-                      {st.byDirection.map((d) => (
-                        <tr key={d.direction} className="border-b border-border/50">
-                          <td className="px-2 py-1">{d.direction}</td>
-                          <td className="px-2 py-1 text-right">{d.trades}</td>
-                          <td className="px-2 py-1 text-right">{pct(d.winRate)}</td>
-                          <td className={cn("px-2 py-1 text-right", d.netProfit > 0 ? "text-emerald-500" : "text-red-500")}>{money(d.netProfit)}</td>
-                          <td className="px-2 py-1 text-right">{num(d.expectancy, 3)} R</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div>
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    By exit reason — how often the first-opposite-candle rule actually closed the trade
-                  </div>
-                  <table className="w-full text-xs">
-                    <thead className="text-[10px] uppercase text-muted-foreground">
-                      <tr className="border-b border-border">
-                        <th className="px-2 py-1 text-left">Reason</th>
-                        <th className="px-2 py-1 text-right">Trades</th>
-                        <th className="px-2 py-1 text-right">Win %</th>
-                        <th className="px-2 py-1 text-right">Net P&amp;L</th>
-                      </tr>
-                    </thead>
-                    <tbody className="font-mono tabular-nums">
-                      {st.byExitReason.map((r) => (
-                        <tr key={r.reason} className="border-b border-border/50">
-                          <td className="px-2 py-1">{r.reason}</td>
-                          <td className="px-2 py-1 text-right">{r.trades}</td>
-                          <td className="px-2 py-1 text-right">{pct(r.winRate)}</td>
-                          <td className={cn("px-2 py-1 text-right", r.netProfit > 0 ? "text-emerald-500" : "text-red-500")}>{money(r.netProfit)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <BreakTable title="By direction" firstCol="Direction" rows={st.byDirection} />
+                <BreakTable
+                  title="By exit reason"
+                  firstCol="Reason"
+                  rows={st.byExitReason}
+                  note="How often the first-opposite-candle rule actually closed the trade, versus the stop or a structure break."
+                />
+                <BreakTable
+                  title="By session"
+                  firstCol="Session"
+                  rows={st.bySession}
+                  note="IST windows: Sydney 02:30–05:30 · Tokyo 05:30–12:30 · London 12:30–17:30 · New York 17:30–02:30. Bucketed by entry time."
+                />
+                <BreakTable title="By weekday" firstCol="Day" rows={st.byDayOfWeek} note="Entry weekday, IST." />
+                <BreakTable title="By month" firstCol="Month" rows={st.byMonth} />
+                <BreakTable title="By week" firstCol="Week commencing (Mon, IST)" rows={st.byWeek} />
               </div>
+
             </CardContent>
           </Card>
 
@@ -556,7 +619,7 @@ export default function ReversalBacktestPage() {
               <table className="w-full text-xs">
                 <thead className="text-[10px] uppercase tracking-wide text-muted-foreground">
                   <tr className="border-b border-border">
-                    {["Dir", "Entry time", "Entry", "Stop", "Exit time", "Exit", "Reason", "Qty", "Fees", "Net P&L", "R", "Bars", "PB", "Chart"].map((h) => (
+                    {["Dir", "Entry time", "Session", "Entry", "Stop", "Exit time", "Exit", "Reason", "Qty", "Fees", "Net P&L", "R", "Bars", "PB", "Chart"].map((h) => (
                       <th key={h} className="px-2 py-1.5 text-right first:text-left">{h}</th>
                     ))}
                   </tr>
@@ -568,6 +631,7 @@ export default function ReversalBacktestPage() {
                         {t.direction === "long" ? "LONG" : "SHORT"}
                       </td>
                       <td className="px-2 py-1.5 text-right">{t.entryDate} {t.entryTime}</td>
+                      <td className="px-2 py-1.5 text-right text-muted-foreground">{t.session}</td>
                       <td className="px-2 py-1.5 text-right">{num(t.entryFill, 4)}</td>
                       <td className="px-2 py-1.5 text-right text-red-400">{num(t.stopPrice, 4)}</td>
                       <td className="px-2 py-1.5 text-right">{t.exitDate} {t.exitTime}</td>
@@ -595,7 +659,7 @@ export default function ReversalBacktestPage() {
                     </tr>
                   ))}
                   {!active.trades.length && (
-                    <tr><td colSpan={14} className="py-6 text-center text-muted-foreground">
+                    <tr><td colSpan={15} className="py-6 text-center text-muted-foreground">
                       No trades on {active.timeframe} with these rules. Loosen the leg or bottom-tolerance settings.
                     </td></tr>
                   )}
@@ -611,7 +675,7 @@ export default function ReversalBacktestPage() {
         <DialogContent className="max-w-5xl">
           <DialogHeader>
             <DialogTitle className="text-sm">
-              {chartTrade?.direction === "long" ? "LONG" : "SHORT"} · {active?.timeframe} ·{" "}
+              {chartTrade?.direction === "long" ? "LONG" : "SHORT"} · {active?.pair} {active?.timeframe} ·{" "}
               {chartTrade?.entryDate} {chartTrade?.entryTime} → {chartTrade?.exitReason}
             </DialogTitle>
           </DialogHeader>

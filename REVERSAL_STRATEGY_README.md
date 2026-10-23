@@ -39,11 +39,11 @@ them:
 
 | Picture says | Engine rule | Config key |
 |---|---|---|
-| "price is moving downward" | close `legLookback` bars ago is above the current low by ≥ `minLegPercent` % and/or ≥ `minLegATR` × ATR | `legMode`, `legLookback`, `minLegPercent`, `minLegATR` |
+| "price is moving downward" | close `legLookback` bars ago is above the current low by ≥ `minLegPercent` % | `legLookback`, `minLegPercent` |
 | "at the bottom" | the candle's low is within `bottomTolerancePercent` % of the lowest low in the lookback window | `bottomTolerancePercent` |
 | "price moves down again" | a later candle prints a low strictly below the first reversal candle's low (or close) | `dipReference`, `maxBarsBetweenReversals`, `maxDipPercent` |
 | "a temporary pullback" | see §3.3 — bounded by candle count and by retracement of the run | `maxPullbackCandles`, `maxPullbackRetracePercent` |
-| "continuation resumes" | see §3.4 — four selectable objective definitions | `resumeMode`, `minResumePercent`, `minResumeATR` |
+| "continuation resumes" | see §3.4 — four selectable objective definitions | `resumeMode`, `minResumePercent` |
 
 SHORT is the exact mirror: every `low`→`high`, `min`→`max`, bullish→bearish.
 
@@ -57,8 +57,7 @@ SHORT is the exact mirror: every `low`→`high`, `min`→`max`, bullish→bearis
   cannot open a pattern and it cannot trigger an exit), `BULL`, or `BEAR`.
 
 Optionally a candle only "counts" as a reversal candle if it has a real body:
-`minBodyATR` (× ATR) and `minBodyPercentOfRange` (body / high-low). Both default
-to `0` = off.
+`minBodyPercentOfRange` (body / high-low), default `0` = off.
 
 ---
 
@@ -74,7 +73,7 @@ FIRST_REVERSAL_CANDLE
 WAITING_FOR_SECOND_REVERSAL_CANDLE
   └─ a bullish candle near the running pattern low     (step 4)
 WAITING_FOR_DIRECTIONAL_CONFIRMATION
-  └─ entryMode satisfied                               (step 6)
+  └─ entry at that candle's close                      (step 6)
 POSITION_OPEN            ← phase CONTINUATION
   ├─ an opposite candle prints → TEMPORARY_PULLBACK     (step 8, never an exit)
   ├─ resume condition met     → CONTINUATION_RESUMED    (step 9, arms the exit)
@@ -82,17 +81,14 @@ POSITION_OPEN            ← phase CONTINUATION
 CLOSED
 ```
 
-A setup resets to `SEEKING_REVERSAL` on timeout (`maxBarsBetweenReversals`,
-`confirmationExpiryBars`), on a too-deep dip (`maxDipPercent`), or when price
-breaks the pattern low before entry.
+A setup resets to `SEEKING_REVERSAL` on timeout (`maxBarsBetweenReversals`) or
+on a too-deep dip (`maxDipPercent`).
 
 ### 2.1 No look-ahead, no repainting
 
 * The machine is a single forward pass. On bar `i` it reads only bars `≤ i`.
-* A swing pivot at index `p` is only visible from bar `p + pivotRight`
-  onwards (`SWING_HIGH_BREAK` entry mode uses this). Pivots never repaint.
-* Entry on `SECOND_CANDLE_CLOSE` fills at the close of the bar that triggered
-  it — a price known at that bar's close, never a later bar.
+* Entry fills at the close of the second reversal candle — a price known at
+  that bar's close, never a later bar.
 * An exit decision is made on bar `i`'s close and filled at `close[i]`
   (`exitFill: "CLOSE"`) or `open[i+1]` (`exitFill: "NEXT_OPEN"`).
 * "Continuation resumed" is decided when the resume bar closes. It is never
@@ -106,24 +102,19 @@ breaks the pattern low before entry.
 
 ## 3. Rules in detail
 
-### 3.1 Entry (`entryMode`)
+### 3.1 Entry
 
-| Mode | Fill |
-|---|---|
-| `SECOND_CANDLE_CLOSE` (default) | close of the second reversal candle |
-| `SECOND_CANDLE_HIGH_BREAK` | stop order at the second reversal candle's high / low; fills on the first later bar whose high/low reaches it |
-| `SWING_HIGH_BREAK` | stop order at the most recent *confirmed* swing high / low above entry; same fill rule |
-
-Break modes expire after `confirmationExpiryBars` and are cancelled if price
-first takes out the pattern low (long) / high (short).
+Always the **close of the second reversal candle**. There is no entry-mode or
+swing-pivot setting: the signal bar has closed, so the price is known and the
+fill needs no further confirmation step.
 
 ### 3.2 Stop loss
 
-* Long: `patternLow × (1 − slBufferPercent/100) − atrStopMultiple × ATR`
-* Short: `patternHigh × (1 + slBufferPercent/100) + atrStopMultiple × ATR`
+* Long: `patternLow × (1 − slBufferPercent/100)`
+* Short: `patternHigh × (1 + slBufferPercent/100)`
 
 `patternLow` = the lowest low from the first reversal candle through the second
-("the confirmed reversal swing low"). `atrStopMultiple` defaults to `0`.
+("the confirmed reversal swing low").
 
 Always-active emergency protections, independent of the candle logic:
 
@@ -158,12 +149,11 @@ single pullback.
 | Mode | Condition (long) |
 |---|---|
 | `NEW_HIGH` (default) | a bar's high exceeds the pre-pullback swing high |
-| `BULL_CLOSE_ABOVE_PULLBACK_HIGH` | a bullish bar closes above the highest high of the pullback |
-| `BULL_CLOSE_ABOVE_PRIOR_HIGH` | a bullish bar closes above the previous bar's high |
-| `N_BULL_CANDLES` | `resumeBullCandles` consecutive bullish bars, each closing above the previous close |
+| `CLOSE_ABOVE_PULLBACK_EXTREME` | a bullish bar closes above the highest high the pullback reached before this bar |
+| `CLOSE_ABOVE_PRIOR_BAR` | a bullish bar closes above the previous bar's high |
 
-Additionally the bar must have travelled `minResumePercent` % and/or
-`minResumeATR` × ATR up from the pullback low (both default `0` = off).
+Additionally the bar must have travelled `minResumePercent` % up from the
+pullback low (default `0` = off).
 
 The pre-pullback swing extreme only updates while the phase is `CONTINUATION`,
 so it is a fixed reference for the whole pullback.
@@ -206,7 +196,24 @@ equity per trade), `FIXED_RISK` (`fixedRiskAmount` cash), `FIXED_QTY`
 
 ---
 
-## 5. Timeframes
+## 4b. Session filter
+
+`sessionFilter` uses the app-wide IST windows from [lib/sessions.js](lib/sessions.js),
+so a filter always means the same thing as the session label in the trades
+table: Sydney 02:30–05:30 · Tokyo 05:30–12:30 · London 12:30–17:30 ·
+New York 17:30–02:30. Values: `ALL`, the four single sessions, the three
+adjacent combos (`LONDON_NY` etc.), or `CUSTOM` with `customSessionStart` /
+`customSessionEnd` in IST `HH:MM`. A trade is bucketed and filtered by its
+**entry** time.
+
+## 5. Instruments and timeframes
+
+Any instrument configured on the dashboard can be backtested — including gold
+(`PAXGUSDT.P`). Select several and the run produces one result per
+**instrument × timeframe**, each with its own equity curve and sizing, so one
+market's drawdown never distorts another's numbers.
+
+### Timeframes
 
 `1m 5m 10m 15m 1h 4h 1d`. Each is backtested independently and compared
 side by side. `10m` is not an exchange interval, so it is built by aggregating
@@ -244,8 +251,21 @@ Computed only from closed trades, after fees, in `computeStats`:
 grossProfit · grossLoss · totalFees · profitFactor · expectancy (R) ·
 expectancyMoney · avgWin · avgLoss · maxDrawdown · maxDrawdownPct ·
 avgBarsHeld · avgHoldMinutes · maxConsecWins · maxConsecLosses`,
-plus `equityCurve`, `drawdownCurve`, and breakdowns by direction and by
-exit reason.
+plus `equityCurve` and `drawdownCurve`.
+
+### Breakdowns
+
+`byMonth · byWeek · byDayOfWeek · bySession · byDirection · byExitReason ·
+byPair` — all produced by the one `breakdown()` helper, so each reports the
+same columns (`trades, wins, losses, winRate, netProfit, grossProfit,
+grossLoss, fees, profitFactor, expectancy, avgBarsHeld, maxDrawdown`) and each
+is covered by the same tests. `maxDrawdown` inside a bucket is measured on that
+bucket's own run of trades, so the "Tue" row shows the worst run you would have
+had trading Tuesdays only.
+
+Buckets are on the IST clock: months `Jan 2024`, weeks keyed by their Monday,
+weekdays Mon-first, sessions as in §4b. A trade falls in the bucket of its
+**entry**.
 
 > Any number shown in the UI comes from an actual run over the candles you
 > loaded. The UI labels a run `SAMPLE` only when it used the built-in synthetic
