@@ -355,6 +355,12 @@ function TopBar({ auto, setAuto, dirty, saving, scanning, lastScan, onSave, onSc
             Fib 0.7–0.786
           </a>
         </Button>
+        <Button variant="outline" size="sm" asChild>
+          <a href="/backtest-reversal" title="Candle reversal — two reversal candles at a swing, exit on the first opposite candle after continuation resumes. Multi-timeframe.">
+            <BarChart3 />
+            Candle Reversal
+          </a>
+        </Button>
 
         <label className="flex h-9 cursor-pointer select-none items-center gap-2 rounded-md border border-border bg-card px-3 text-xs">
           <Switch checked={auto} onCheckedChange={setAuto} aria-label="Toggle auto-scan" />
