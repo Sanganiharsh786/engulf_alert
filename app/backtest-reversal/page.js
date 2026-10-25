@@ -10,14 +10,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/backtest/spinner";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { ReversalChart } from "@/components/backtest/reversal-chart";
 import { DEFAULT_CONFIG, TIMEFRAMES } from "@/lib/reversalStrategy";
-import { SESSION_FILTERS } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
 
 const money = (n) =>
@@ -44,28 +42,7 @@ function Num({ label, value, onChange, step = 1, min, hint, w = "w-28" }) {
   );
 }
 
-function Sel({ label, value, onChange, options, hint, w = "w-56" }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <Label className="text-[10px] uppercase tracking-wide text-muted-foreground" title={hint}>{label}</Label>
-      <select
-        value={value} onChange={(e) => onChange(e.target.value)}
-        className={cn("h-8 rounded-md border border-border bg-card px-2 font-mono text-xs", w)}
-      >
-        {options.map((o) => <option key={o} value={o}>{o}</option>)}
-      </select>
-    </div>
-  );
-}
 
-function Chk({ label, checked, onChange, hint }) {
-  return (
-    <label className="flex h-8 cursor-pointer select-none items-center gap-2 rounded-md border border-border bg-card px-2 text-xs" title={hint}>
-      <input type="checkbox" checked={!!checked} onChange={(e) => onChange(e.target.checked)} />
-      {label}
-    </label>
-  );
-}
 
 function Stat({ label, value, tone }) {
   return (
@@ -151,23 +128,14 @@ function LineChart({ points, valueKey, height = 160, color = "#60a5fa", zeroBase
 }
 
 // ---------------------------------------------------------------------------
-const RESUME_MODES = [
-  "NEW_HIGH", "CLOSE_ABOVE_PULLBACK_EXTREME", "CLOSE_ABOVE_PRIOR_BAR",
-];
-const SIZING_MODES = ["RISK_PERCENT", "FIXED_RISK", "FIXED_QTY", "FIXED_NOTIONAL"];
-const HTF_MODES = ["NONE", "CANDLE_COLOR", "EMA"];
-const HTF_TFS = ["15m", "1h", "4h", "1d"];
-const EXIT_FILLS = ["CLOSE", "NEXT_OPEN"];
-const DIP_REFS = ["CANDLE_LOW", "CANDLE_CLOSE"];
-const DOJI = ["NEUTRAL", "BULL", "BEAR"];
-const SESSION_OPTS = [...Object.keys(SESSION_FILTERS), "CUSTOM"];
-
 export default function ReversalBacktestPage() {
   const [cfg, setCfg] = useState({ ...DEFAULT_CONFIG });
   const [timeframes, setTimeframes] = useState(["5m", "15m", "1h", "4h"]);
   const [allPairs, setAllPairs] = useState([]);
   const [pairs, setPairs] = useState([]);
-  const [days, setDays] = useState(30);
+  // the pattern filter is selective, so a short window yields too few trades
+  // to judge anything — default to a sample worth reading
+  const [days, setDays] = useState(180);
   const [csv, setCsv] = useState(null); // { name, text }
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
@@ -220,7 +188,11 @@ export default function ReversalBacktestPage() {
     setRunning(true);
     setError("");
     try {
-      const body = { config: cfg, timeframes, days: Number(days) || 30, pairs };
+      // the strategy is fixed; capital and risk are the only user inputs
+      const body = {
+        config: { initialCapital: Number(cfg.initialCapital), riskPercent: Number(cfg.riskPercent) },
+        timeframes, days: Number(days) || 30, pairs,
+      };
       if (csv) { body.csv = csv.text; body.symbol = csv.name; }
       const r = await fetch("/api/backtest-reversal", {
         method: "POST",
@@ -288,8 +260,10 @@ export default function ReversalBacktestPage() {
 
       <p className="text-xs text-muted-foreground">
         Two reversal candles at a swing extreme, then hold through temporary pullbacks and exit on the
-        first opposite-colour candle <em>after</em> continuation resumes. Every subjective rule below is a
-        setting — see <code className="font-mono">REVERSAL_STRATEGY_README.md</code> for the exact definitions.
+        first opposite-colour candle <em>after</em> continuation resumes. The rules are fixed — pick the
+        instruments, timeframes and your risk, and run.
+        See <code className="font-mono">REVERSAL_STRATEGY_README.md</code> for the exact definitions and
+        the measured performance.
       </p>
 
       {/* ---- data source ------------------------------------------------- */}
@@ -339,7 +313,6 @@ export default function ReversalBacktestPage() {
               ))}
             </div>
           </div>
-          <Separator orientation="vertical" className="h-10" />
           <div className="flex flex-col gap-1">
             <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Or upload OHLCV CSV</Label>
             <div className="flex items-center gap-2">
@@ -394,90 +367,19 @@ export default function ReversalBacktestPage() {
         </Card>
       )}
 
-      {/* ---- configuration ----------------------------------------------- */}
+      {/* ---- risk (the only thing left to set) --------------------------- */}
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">2 · Strategy rules</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Pattern</div>
-            <div className="flex flex-wrap items-end gap-3">
-              <Num label="Leg lookback (bars)" value={cfg.legLookback} onChange={set("legLookback")} min={1} />
-              <Num label="Min leg %" value={cfg.minLegPercent} onChange={set("minLegPercent")} step={0.1} min={0}
-                hint="Required size of the prior move, % of the reference close. 0 = off" />
-              <Num label="Bottom tolerance %" value={cfg.bottomTolerancePercent} onChange={set("bottomTolerancePercent")} step={0.05} min={0}
-                hint="How far above the window low a reversal candle's low may sit" />
-              <Sel label="Dip reference" value={cfg.dipReference} onChange={set("dipReference")} options={DIP_REFS} w="w-40" />
-              <Num label="Max bars R1→R2" value={cfg.maxBarsBetweenReversals} onChange={set("maxBarsBetweenReversals")} min={1} />
-              <Num label="Max dip %" value={cfg.maxDipPercent} onChange={set("maxDipPercent")} step={0.1} min={0}
-                hint="A dip deeper than this past the first reversal candle invalidates the setup" />
-              <Sel label="Doji policy" value={cfg.dojiPolicy} onChange={set("dojiPolicy")} options={DOJI} w="w-28" />
-              <Num label="Min body % of range" value={cfg.minBodyPercentOfRange} onChange={set("minBodyPercentOfRange")} step={5} min={0} />
-              <Chk label="Longs" checked={cfg.allowLong} onChange={set("allowLong")} />
-              <Chk label="Shorts" checked={cfg.allowShort} onChange={set("allowShort")} />
-            </div>
-            <div className="mt-1 text-[10px] text-muted-foreground">
-              Entry is always the close of the second reversal candle.
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Pullback vs. continuation — the rules that decide the exit
-            </div>
-            <div className="flex flex-wrap items-end gap-3">
-              <Num label="Max pullback candles" value={cfg.maxPullbackCandles} onChange={set("maxPullbackCandles")} min={1}
-                hint="More opposite candles than this = structure break, not a pullback" />
-              <Num label="Max pullback retrace %" value={cfg.maxPullbackRetracePercent} onChange={set("maxPullbackRetracePercent")} step={1} min={0}
-                hint="Retracement of the move from entry to the pre-pullback extreme. 0 = off" />
-              <Chk label="Exit on failed continuation" checked={cfg.exitOnFailedContinuation} onChange={set("exitOnFailedContinuation")} />
-              <Sel label="Continuation resumed when" value={cfg.resumeMode} onChange={set("resumeMode")} options={RESUME_MODES} w="w-72" />
-              <Num label="Min resume %" value={cfg.minResumePercent} onChange={set("minResumePercent")} step={0.1} min={0} />
-              <Num label="Arm exit after N cycles" value={cfg.armAfterCycles} onChange={set("armAfterCycles")} min={0}
-                hint="1 = a red candle in the first leg up is a pullback, not an exit. 0 = exit on the first red after entry" />
-              <Sel label="Exit fill" value={cfg.exitFill} onChange={set("exitFill")} options={EXIT_FILLS} w="w-36" />
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Risk &amp; execution</div>
-            <div className="flex flex-wrap items-end gap-3">
-              <Num label="SL buffer %" value={cfg.slBufferPercent} onChange={set("slBufferPercent")} step={0.05} min={0}
-                hint="Beyond the confirmed reversal swing low/high" />
-              <Num label="Emergency stop %" value={cfg.emergencyStopPercent} onChange={set("emergencyStopPercent")} step={0.1} min={0} hint="0 = off" />
-              <Num label="Max hold (bars)" value={cfg.maxHoldBars} onChange={set("maxHoldBars")} min={0} hint="0 = off" />
-              <Separator orientation="vertical" className="h-10" />
-              <Sel label="Session filter" value={cfg.sessionFilter} onChange={set("sessionFilter")} options={SESSION_OPTS} w="w-44"
-                hint="IST windows — Sydney 02:30, Tokyo 05:30, London 12:30, New York 17:30" />
-              {cfg.sessionFilter === "CUSTOM" && (
-                <>
-                  <div className="flex flex-col gap-1">
-                    <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Custom start (IST)</Label>
-                    <Input value={cfg.customSessionStart} onChange={(e) => set("customSessionStart")(e.target.value)}
-                      className="h-8 w-24 font-mono text-xs" />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Custom end (IST)</Label>
-                    <Input value={cfg.customSessionEnd} onChange={(e) => set("customSessionEnd")(e.target.value)}
-                      className="h-8 w-24 font-mono text-xs" />
-                  </div>
-                </>
-              )}
-              <Separator orientation="vertical" className="h-10" />
-              <Num label="Initial capital" value={cfg.initialCapital} onChange={set("initialCapital")} step={100} min={1} />
-              <Sel label="Sizing" value={cfg.sizingMode} onChange={set("sizingMode")} options={SIZING_MODES} w="w-44" />
-              <Num label="Risk % per trade" value={cfg.riskPercent} onChange={set("riskPercent")} step={0.1} min={0} />
-              <Num label="Fixed risk $" value={cfg.fixedRiskAmount} onChange={set("fixedRiskAmount")} step={10} min={0} />
-              <Num label="Fixed qty" value={cfg.fixedQty} onChange={set("fixedQty")} step={0.1} min={0} />
-              <Num label="Fixed notional $" value={cfg.fixedNotional} onChange={set("fixedNotional")} step={100} min={0} />
-              <Separator orientation="vertical" className="h-10" />
-              <Num label="Fee % / side" value={cfg.feePercentPerSide} onChange={set("feePercentPerSide")} step={0.01} min={0} />
-              <Num label="Spread %" value={cfg.spreadPercent} onChange={set("spreadPercent")} step={0.01} min={0} />
-              <Num label="Slippage %" value={cfg.slippagePercent} onChange={set("slippagePercent")} step={0.01} min={0} />
-              <Separator orientation="vertical" className="h-10" />
-              <Sel label="HTF trend filter" value={cfg.htfMode} onChange={set("htfMode")} options={HTF_MODES} w="w-40" />
-              <Sel label="HTF timeframe" value={cfg.htfTimeframe} onChange={set("htfTimeframe")} options={HTF_TFS} w="w-28" />
-              <Num label="HTF EMA period" value={cfg.htfEmaPeriod} onChange={set("htfEmaPeriod")} min={2} />
-            </div>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">2 · Risk</CardTitle></CardHeader>
+        <CardContent className="flex flex-wrap items-end gap-4">
+          <Num label="Capital" value={cfg.initialCapital} onChange={set("initialCapital")} step={100} min={1} w="w-36"
+            hint="Starting account size the equity curve compounds from" />
+          <Num label="Risk % per trade" value={cfg.riskPercent} onChange={set("riskPercent")} step={0.1} min={0} w="w-28"
+            hint="Percent of current equity risked between entry and stop on each trade" />
+          <div className="text-[11px] leading-relaxed text-muted-foreground">
+            The strategy itself is fixed — reversal pattern, entry at the second reversal candle&apos;s close,
+            stop below the reversal swing, and the first-opposite-candle exit are all built in.
+            Costs are applied at {cfg.feePercentPerSide}% fee per side, {cfg.spreadPercent}% spread
+            and {cfg.slippagePercent}% slippage.
           </div>
         </CardContent>
       </Card>

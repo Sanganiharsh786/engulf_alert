@@ -40,7 +40,8 @@ them:
 | Picture says | Engine rule | Config key |
 |---|---|---|
 | "price is moving downward" | close `legLookback` bars ago is above the current low by ≥ `minLegPercent` % | `legLookback`, `minLegPercent` |
-| "at the bottom" | the candle's low is within `bottomTolerancePercent` % of the lowest low in the lookback window | `bottomTolerancePercent` |
+| "at the bottom" (R1) | the candle's low is the lowest in the lookback window, within `bottomTolerancePercent` % | `bottomTolerancePercent` |
+| "near the bottom" (R2) | the candle's low is inside the bottom `bottomZonePercentOfLeg` % **of the leg's own range**, measured up from the pattern low. A flat % of price cannot mean the same thing on a 0.5% range and a 5% range, and it made the engine reject real double bottoms whose second low sits a little above the first | `bottomZonePercentOfLeg` |
 | "price moves down again" | a later candle prints a low strictly below the first reversal candle's low (or close) | `dipReference`, `maxBarsBetweenReversals`, `maxDipPercent` |
 | "a temporary pullback" | see §3.3 — bounded by candle count and by retracement of the run | `maxPullbackCandles`, `maxPullbackRetracePercent` |
 | "continuation resumes" | see §3.4 — four selectable objective definitions | `resumeMode`, `minResumePercent` |
@@ -174,6 +175,19 @@ Exit reasons recorded per trade: `firstOpposite`, `stop`, `emergencyStop`,
 
 ---
 
+### 3.1a Entry quality
+
+Measured on real data, the single largest loss source is trades that stop out
+before the pattern develops at all. Two filters test whether the second
+reversal candle actually showed strength, using only that candle and R1:
+
+* `minClosePositionPercent` (default `55`) — R2 must close in the top 55% of
+  its own high-low range (mirrored for shorts). A bullish candle that closes
+  near its low is not a reversal.
+* `requireSecondStronger` (default off) — R2 must close beyond R1's close.
+* `maxRiskPercent` (default `0` = off) — skip a setup whose stop would sit
+  further than X% from entry.
+
 ## 4. Execution model
 
 Applied by [lib/reversalBacktest.js](lib/reversalBacktest.js) on top of the raw
@@ -266,6 +280,42 @@ had trading Tuesdays only.
 Buckets are on the IST clock: months `Jan 2024`, weeks keyed by their Monday,
 weekdays Mon-first, sessions as in §4b. A trade falls in the bucket of its
 **entry**.
+
+## 8. Measured performance — read this before trusting it
+
+Defaults were chosen by a **train/test sweep**, not by picking the best
+in-sample numbers: BTC / ETH / PAXG × 15m / 1h / 4h, 180 days, chronologically
+split two-thirds train and one-third held out. Configurations were ranked by
+the *worse* of the two halves.
+
+What the tuning actually bought (full 180 days, after fees, 9 pair×timeframe
+runs):
+
+| | old defaults | current defaults |
+|---|---|---|
+| trades | 2552 | 270 |
+| win rate | 24.6% | **38.5%** |
+| expectancy | −0.38 R | **−0.05 R** |
+| avg net | −48.5% | −1.4% |
+| avg max drawdown | 50.1% | **5.4%** |
+
+**The strategy is approximately breakeven-to-slightly-negative after realistic
+costs, and no parameter set tested was profitable on both halves — 0 of 252.**
+Every configuration that looked strong in-sample (+0.5 to +0.76 R, 55–59% win
+rate) collapsed on the held-out half (−0.21 to −0.35 R). That is curve-fitting,
+and it is reported here rather than hidden.
+
+The component that works is the exit. Broken out by exit reason:
+
+| exit | trades | win rate | avg R |
+|---|---|---|---|
+| `firstOpposite` | 54 | **94.4%** | **+1.33** |
+| `failedContinuation` | 99 | 53.5% | +0.35 |
+| `stop` | 111 | 0% | −1.12 |
+
+So the first-opposite-candle rule is excellent when the trade gets going; the
+drag is the ~42% of setups that stop out before it ever does. Improving this
+further means a better entry filter, not a better exit.
 
 > Any number shown in the UI comes from an actual run over the candles you
 > loaded. The UI labels a run `SAMPLE` only when it used the built-in synthetic
